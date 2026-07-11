@@ -12,6 +12,7 @@ import {
   fuelLabels,
   docTypeLabels,
   daysUntil,
+  type Vehicle,
 } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 
@@ -30,7 +31,7 @@ export const Route = createFileRoute("/vehicles/$id")({
 });
 
 function VehicleDetail() {
-  const { vehicle } = Route.useLoaderData();
+  const { vehicle } = Route.useLoaderData() as { vehicle: Vehicle };
   const vInspections = inspections.filter((i) => i.vehicleId === vehicle.id).sort((a, b) => b.date.localeCompare(a.date));
   const vMaintenances = maintenances.filter((m) => m.vehicleId === vehicle.id);
   const vDocs = documents.filter((d) => d.vehicleId === vehicle.id);
