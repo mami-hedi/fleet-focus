@@ -2,7 +2,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { AlertTriangle } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { documents, getVehicle, docTypeLabels, daysUntil } from "@/lib/mock-data";
+import { docTypeLabels, daysUntil } from "@/lib/mock-data";
+import { useFleetStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/documents")({
@@ -11,6 +12,8 @@ export const Route = createFileRoute("/documents")({
 });
 
 function DocumentsPage() {
+  const documents = useFleetStore((s) => s.documents);
+  const vehicles = useFleetStore((s) => s.vehicles);
   const sorted = [...documents].sort((a, b) => a.expiryDate.localeCompare(b.expiryDate));
   const expired = sorted.filter((d) => daysUntil(d.expiryDate) < 0).length;
   const soon = sorted.filter((d) => { const dd = daysUntil(d.expiryDate); return dd >= 0 && dd < 30; }).length;
@@ -37,7 +40,7 @@ function DocumentsPage() {
             </TableHeader>
             <TableBody>
               {sorted.map((d) => {
-                const v = getVehicle(d.vehicleId);
+                const v = vehicles.find((x) => x.id === d.vehicleId);
                 const days = daysUntil(d.expiryDate);
                 const urgency = days < 0 ? "expired" : days < 30 ? "soon" : "ok";
                 const cfg = {

@@ -4,7 +4,8 @@ import { Plus, Calendar } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { maintenances, getVehicle } from "@/lib/mock-data";
+import { useFleetStore } from "@/lib/store";
+import { MaintenanceDialog } from "@/components/MaintenanceDialog";
 import { cn } from "@/lib/utils";
 
 type Filter = "all" | "upcoming" | "in_progress" | "completed";
@@ -22,16 +23,23 @@ const filterLabels: Record<Filter, string> = {
 };
 
 function MaintenancePage() {
+  const maintenances = useFleetStore((s) => s.maintenances);
+  const vehicles = useFleetStore((s) => s.vehicles);
   const [filter, setFilter] = useState<Filter>("all");
+  const [dialogOpen, setDialogOpen] = useState(false);
   const filtered = useMemo(
     () => (filter === "all" ? maintenances : maintenances.filter((m) => m.status === filter)),
-    [filter],
+    [maintenances, filter],
   );
 
   return (
     <AppLayout
       title="Maintenance"
-      actions={<Button size="sm" className="gap-1.5"><Plus className="h-4 w-4" /> Planifier</Button>}
+      actions={
+        <Button size="sm" className="gap-1.5" onClick={() => setDialogOpen(true)}>
+          <Plus className="h-4 w-4" /> Planifier
+        </Button>
+      }
     >
       <div className="mx-auto flex max-w-7xl flex-col gap-5">
         <div className="flex flex-wrap gap-1 rounded-lg border border-border bg-card p-1 w-fit">
@@ -65,8 +73,15 @@ function MaintenancePage() {
               </TableRow>
             </TableHeader>
             <TableBody>
+              {filtered.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
+                    Aucune maintenance dans cette catégorie.
+                  </TableCell>
+                </TableRow>
+              )}
               {filtered.map((m) => {
-                const v = getVehicle(m.vehicleId);
+                const v = vehicles.find((x) => x.id === m.vehicleId);
                 const status = {
                   upcoming: { label: "À venir", cls: "bg-info/15 text-info" },
                   in_progress: { label: "En cours", cls: "bg-warning/20 text-warning-foreground" },
@@ -106,6 +121,8 @@ function MaintenancePage() {
           </Table>
         </div>
       </div>
+
+      <MaintenanceDialog open={dialogOpen} onOpenChange={setDialogOpen} />
     </AppLayout>
   );
 }

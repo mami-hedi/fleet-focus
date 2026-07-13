@@ -1,5 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { z } from "zod";
 import { UploadCloud, Camera } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -11,9 +12,13 @@ import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "sonner";
-import { vehicles } from "@/lib/mock-data";
+import { useFleetStore } from "@/lib/store";
+import type { Inspection } from "@/lib/mock-data";
+
+const searchSchema = z.object({ vehicleId: z.string().optional() });
 
 export const Route = createFileRoute("/inspections/new")({
+  validateSearch: searchSchema,
   head: () => ({ meta: [{ title: "Nouvel état des lieux — FleetOps" }] }),
   component: NewInspection,
 });
@@ -29,31 +34,65 @@ const photoZones = [
 
 const checklistItems = [
   { key: "tires", label: "Pneus en bon état" },
-  { key: "exterior", label: "Propreté extérieure" },
-  { key: "interior", label: "Propreté intérieure" },
-  { key: "spare", label: "Roue de secours" },
+  { key: "exteriorClean", label: "Propreté extérieure" },
+  { key: "interiorClean", label: "Propreté intérieure" },
+  { key: "spareWheel", label: "Roue de secours" },
   { key: "triangle", label: "Triangle de signalisation" },
   { key: "vest", label: "Gilet haute visibilité" },
-];
+] as const;
 
 function NewInspection() {
+  const { vehicleId: initialVehicleId } = Route.useSearch();
+  const vehicles = useFleetStore((s) => s.vehicles);
+  const addInspection = useFleetStore((s) => s.addInspection);
+  const navigate = useNavigate();
+
+  const [vehicleId, setVehicleId] = useState<string>(initialVehicleId ?? "");
+  const [type, setType] = useState<"entree" | "sortie">("entree");
+  const [mileage, setMileage] = useState<number>(0);
   const [fuel, setFuel] = useState([80]);
+  const [notes, setNotes] = useState("");
+  const [checklist, setChecklist] = useState<Record<string, boolean>>({
+    tires: true, exteriorClean: true, interiorClean: true, spareWheel: true, triangle: true, vest: true,
+  });
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!vehicleId) {
+      toast.error("Sélectionnez un véhicule.");
+      return;
+    }
+    const inspection: Omit<Inspection, "id"> = {
+      vehicleId,
+      type,
+      date: new Date().toISOString().slice(0, 10),
+      mileage,
+      fuelLevel: fuel[0],
+      notes,
+      checklist: {
+        tires: !!checklist.tires,
+        exteriorClean: !!checklist.exteriorClean,
+        interiorClean: !!checklist.interiorClean,
+        spareWheel: !!checklist.spareWheel,
+        triangle: !!checklist.triangle,
+        vest: !!checklist.vest,
+      },
+      photos: [],
+    };
+    addInspection(inspection);
+    toast.success("État des lieux enregistré", { description: "Le rapport a été ajouté à la fiche du véhicule." });
+    navigate({ to: "/vehicles/$id", params: { id: vehicleId } });
+  };
 
   return (
     <AppLayout title="Nouvel état des lieux">
-      <form
-        className="mx-auto flex max-w-4xl flex-col gap-6"
-        onSubmit={(e) => {
-          e.preventDefault();
-          toast.success("État des lieux enregistré", { description: "Le rapport a été ajouté à la fiche du véhicule." });
-        }}
-      >
+      <form className="mx-auto flex max-w-4xl flex-col gap-6" onSubmit={submit}>
         <div className="rounded-xl border border-border bg-card p-6">
           <h2 className="text-sm font-semibold">Informations générales</h2>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div>
               <Label>Véhicule</Label>
-              <Select>
+              <Select value={vehicleId} onValueChange={setVehicleId}>
                 <SelectTrigger className="mt-1.5"><SelectValue placeholder="Sélectionner un véhicule" /></SelectTrigger>
                 <SelectContent>
                   {vehicles.map((v) => (
@@ -64,7 +103,7 @@ function NewInspection() {
             </div>
             <div>
               <Label>Type</Label>
-              <RadioGroup defaultValue="entree" className="mt-2 flex gap-4">
+              <RadioGroup value={type} onValueChange={(v) => setType(v as "entree" | "sortie")} className="mt-2 flex gap-4">
                 <label className="flex items-center gap-2 text-sm"><RadioGroupItem value="entree" /> Entrée</label>
                 <label className="flex items-center gap-2 text-sm"><RadioGroupItem value="sortie" /> Sortie</label>
               </RadioGroup>
@@ -94,7 +133,10 @@ function NewInspection() {
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             {checklistItems.map((c) => (
               <label key={c.key} className="flex cursor-pointer items-center gap-3 rounded-lg border border-border p-3 hover:bg-accent/30">
-                <Checkbox id={c.key} defaultChecked />
+                <Checkbox
+                  checked={!!checklist[c.key]}
+                  onCheckedChange={(v) => setChecklist((cl) => ({ ...cl, [c.key]: !!v }))}
+                />
                 <span className="text-sm">{c.label}</span>
               </label>
             ))}
@@ -106,7 +148,7 @@ function NewInspection() {
           <div className="mt-4 grid gap-5 sm:grid-cols-2">
             <div>
               <Label htmlFor="km">Kilométrage</Label>
-              <Input id="km" type="number" placeholder="Ex : 45 230" className="mt-1.5" />
+              <Input id="km" type="number" value={mileage || ""} onChange={(e) => setMileage(Number(e.target.value))} placeholder="Ex : 45 230" className="mt-1.5" />
             </div>
             <div>
               <div className="flex items-center justify-between">
@@ -121,12 +163,12 @@ function NewInspection() {
           </div>
           <div className="mt-5">
             <Label htmlFor="notes">Notes</Label>
-            <Textarea id="notes" placeholder="Rayures, chocs, observations diverses..." className="mt-1.5" rows={4} />
+            <Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Rayures, chocs, observations diverses..." className="mt-1.5" rows={4} />
           </div>
         </div>
 
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline">Annuler</Button>
+          <Button type="button" variant="outline" onClick={() => navigate({ to: "/vehicles" })}>Annuler</Button>
           <Button type="submit" className="gap-1.5"><Camera className="h-4 w-4" /> Enregistrer l'état des lieux</Button>
         </div>
       </form>

@@ -1,43 +1,80 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { ArrowLeft, Calendar, Wrench, FileText, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
+import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
+import { ArrowLeft, Calendar, Wrench, FileText, CheckCircle2, XCircle, AlertTriangle, Pencil, Trash2, Plus } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import {
-  vehicles,
-  inspections,
-  maintenances,
-  documents,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   fuelLabels,
   docTypeLabels,
   daysUntil,
-  type Vehicle,
 } from "@/lib/mock-data";
+import { useFleetStore } from "@/lib/store";
+import { VehicleFormDialog } from "@/components/VehicleFormDialog";
+import { MaintenanceDialog } from "@/components/MaintenanceDialog";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/vehicles/$id")({
-  loader: ({ params }) => {
-    const vehicle = vehicles.find((v) => v.id === params.id);
-    if (!vehicle) throw notFound();
-    return { vehicle };
-  },
-  head: ({ loaderData }) => ({
-    meta: [
-      { title: loaderData ? `${loaderData.vehicle.brand} ${loaderData.vehicle.model} — FleetOps` : "Véhicule" },
-    ],
-  }),
+  loader: ({ params }) => ({ id: params.id }),
+  head: () => ({ meta: [{ title: "Véhicule — FleetOps" }] }),
   component: VehicleDetail,
+  notFoundComponent: () => (
+    <AppLayout title="Véhicule introuvable">
+      <p className="text-sm text-muted-foreground">Ce véhicule n'existe pas ou a été supprimé.</p>
+    </AppLayout>
+  ),
 });
 
 function VehicleDetail() {
-  const { vehicle } = Route.useLoaderData() as { vehicle: Vehicle };
+  const { id } = Route.useLoaderData();
+  const vehicle = useFleetStore((s) => s.vehicles.find((v) => v.id === id));
+  const inspections = useFleetStore((s) => s.inspections);
+  const maintenances = useFleetStore((s) => s.maintenances);
+  const documents = useFleetStore((s) => s.documents);
+  const deleteVehicle = useFleetStore((s) => s.deleteVehicle);
+  const navigate = useNavigate();
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [maintOpen, setMaintOpen] = useState(false);
+
+  if (!vehicle) throw notFound();
+
   const vInspections = inspections.filter((i) => i.vehicleId === vehicle.id).sort((a, b) => b.date.localeCompare(a.date));
   const vMaintenances = maintenances.filter((m) => m.vehicleId === vehicle.id);
   const vDocs = documents.filter((d) => d.vehicleId === vehicle.id);
 
+  const handleDelete = () => {
+    deleteVehicle(vehicle.id);
+    toast.success("Véhicule supprimé");
+    navigate({ to: "/vehicles" });
+  };
+
   return (
-    <AppLayout title={`${vehicle.brand} ${vehicle.model}`}>
+    <AppLayout
+      title={`${vehicle.brand} ${vehicle.model}`}
+      actions={
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setEditOpen(true)}>
+            <Pencil className="h-3.5 w-3.5" /> Modifier
+          </Button>
+          <Button size="sm" variant="outline" className="gap-1.5 text-destructive hover:text-destructive" onClick={() => setDeleteOpen(true)}>
+            <Trash2 className="h-3.5 w-3.5" /> Supprimer
+          </Button>
+        </div>
+      }
+    >
       <div className="mx-auto flex max-w-6xl flex-col gap-6">
         <Link to="/vehicles" className="inline-flex w-fit items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-3.5 w-3.5" /> Retour aux véhicules
@@ -90,7 +127,9 @@ function VehicleDetail() {
           <TabsContent value="inspections" className="mt-4">
             <div className="flex items-center justify-between pb-3">
               <p className="text-sm text-muted-foreground">{vInspections.length} état{vInspections.length > 1 ? "s" : ""} des lieux</p>
-              <Link to="/inspections/new"><Button size="sm">Nouvel état des lieux</Button></Link>
+              <Link to="/inspections/new" search={{ vehicleId: vehicle.id }}>
+                <Button size="sm" className="gap-1.5"><Plus className="h-3.5 w-3.5" /> Nouvel état des lieux</Button>
+              </Link>
             </div>
             <ol className="relative space-y-4 border-l-2 border-border pl-6">
               {vInspections.length === 0 && <p className="text-sm text-muted-foreground">Aucun état des lieux enregistré.</p>}
@@ -109,11 +148,13 @@ function VehicleDetail() {
                         <p className="text-xs text-muted-foreground">{ins.mileage.toLocaleString("fr-FR")} km · Carburant {ins.fuelLevel}%</p>
                       </div>
                     </div>
-                    <div className="mt-3 flex gap-2 overflow-x-auto">
-                      {ins.photos.map((p, i) => (
-                        <img key={i} src={p} alt="" className="h-16 w-24 shrink-0 rounded-md object-cover" />
-                      ))}
-                    </div>
+                    {ins.photos.length > 0 && (
+                      <div className="mt-3 flex gap-2 overflow-x-auto">
+                        {ins.photos.map((p, i) => (
+                          <img key={i} src={p} alt="" className="h-16 w-24 shrink-0 rounded-md object-cover" />
+                        ))}
+                      </div>
+                    )}
                     <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3">
                       {Object.entries(ins.checklist).map(([k, v]) => (
                         <div key={k} className="flex items-center gap-1.5">
@@ -130,6 +171,12 @@ function VehicleDetail() {
           </TabsContent>
 
           <TabsContent value="maintenance" className="mt-4">
+            <div className="flex items-center justify-between pb-3">
+              <p className="text-sm text-muted-foreground">{vMaintenances.length} intervention{vMaintenances.length > 1 ? "s" : ""}</p>
+              <Button size="sm" className="gap-1.5" onClick={() => setMaintOpen(true)}>
+                <Plus className="h-3.5 w-3.5" /> Planifier une maintenance
+              </Button>
+            </div>
             <div className="rounded-xl border border-border bg-card">
               <ul className="divide-y divide-border">
                 {vMaintenances.length === 0 && <li className="p-4 text-sm text-muted-foreground">Aucune maintenance.</li>}
@@ -174,6 +221,26 @@ function VehicleDetail() {
           </TabsContent>
         </Tabs>
       </div>
+
+      <VehicleFormDialog open={editOpen} onOpenChange={setEditOpen} vehicle={vehicle} />
+      <MaintenanceDialog open={maintOpen} onOpenChange={setMaintOpen} vehicleId={vehicle.id} />
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Supprimer ce véhicule ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {vehicle.brand} {vehicle.model} ({vehicle.plate}) sera retiré du parc avec ses documents et maintenances liés.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Supprimer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }
