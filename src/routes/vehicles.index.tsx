@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { Search, LayoutGrid, List, Plus } from "lucide-react";
+import { Search, LayoutGrid, List, Plus, Pencil, Trash2 } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
 import { VehicleCard } from "@/components/VehicleCard";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -14,8 +14,21 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Link } from "@tanstack/react-router";
-import { vehicles, fuelLabels, statusLabels, type VehicleStatus, type FuelType } from "@/lib/mock-data";
+import { fuelLabels, statusLabels, type Vehicle, type VehicleStatus, type FuelType } from "@/lib/mock-data";
+import { useFleetStore } from "@/lib/store";
+import { VehicleFormDialog } from "@/components/VehicleFormDialog";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/vehicles/")({
@@ -29,11 +42,16 @@ export const Route = createFileRoute("/vehicles/")({
 });
 
 function VehiclesList() {
+  const vehicles = useFleetStore((s) => s.vehicles);
+  const deleteVehicle = useFleetStore((s) => s.deleteVehicle);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<VehicleStatus | "all">("all");
   const [brand, setBrand] = useState<string>("all");
   const [fuel, setFuel] = useState<FuelType | "all">("all");
   const [view, setView] = useState<"grid" | "list">("grid");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<Vehicle | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Vehicle | null>(null);
 
   const brands = Array.from(new Set(vehicles.map((v) => v.brand)));
 
@@ -50,14 +68,24 @@ function VehiclesList() {
         }
         return true;
       }),
-    [query, status, brand, fuel],
+    [vehicles, query, status, brand, fuel],
   );
+
+  const openAdd = () => { setEditing(null); setDialogOpen(true); };
+  const openEdit = (v: Vehicle) => { setEditing(v); setDialogOpen(true); };
+  const confirmDelete = () => {
+    if (deleteTarget) {
+      deleteVehicle(deleteTarget.id);
+      toast.success(`${deleteTarget.brand} ${deleteTarget.model} supprimé`);
+      setDeleteTarget(null);
+    }
+  };
 
   return (
     <AppLayout
       title="Véhicules"
       actions={
-        <Button size="sm" className="gap-1.5">
+        <Button size="sm" className="gap-1.5" onClick={openAdd}>
           <Plus className="h-4 w-4" />
           Ajouter un véhicule
         </Button>
@@ -121,7 +149,19 @@ function VehiclesList() {
 
         {view === "grid" ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {filtered.map((v) => (<VehicleCard key={v.id} vehicle={v} />))}
+            {filtered.map((v) => (
+              <div key={v.id} className="group relative">
+                <VehicleCard vehicle={v} />
+                <div className="absolute right-3 bottom-3 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                  <Button size="icon" variant="secondary" className="h-8 w-8" onClick={(e) => { e.preventDefault(); openEdit(v); }}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button size="icon" variant="destructive" className="h-8 w-8" onClick={(e) => { e.preventDefault(); setDeleteTarget(v); }}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            ))}
           </div>
         ) : (
           <div className="overflow-hidden rounded-xl border border-border bg-card">
@@ -134,11 +174,12 @@ function VehiclesList() {
                   <TableHead>Carburant</TableHead>
                   <TableHead>Kilométrage</TableHead>
                   <TableHead>Statut</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filtered.map((v) => (
-                  <TableRow key={v.id} className="cursor-pointer">
+                  <TableRow key={v.id}>
                     <TableCell>
                       <Link to="/vehicles/$id" params={{ id: v.id }} className="flex items-center gap-3">
                         <img src={v.image} alt="" className="h-10 w-16 rounded object-cover" />
@@ -150,6 +191,16 @@ function VehiclesList() {
                     <TableCell>{fuelLabels[v.fuel]}</TableCell>
                     <TableCell>{v.mileage.toLocaleString("fr-FR")} km</TableCell>
                     <TableCell><StatusBadge status={v.status} /></TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-1">
+                        <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => openEdit(v)}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteTarget(v)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -157,6 +208,25 @@ function VehiclesList() {
           </div>
         )}
       </div>
+
+      <VehicleFormDialog open={dialogOpen} onOpenChange={setDialogOpen} vehicle={editing} />
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Supprimer ce véhicule ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget && `${deleteTarget.brand} ${deleteTarget.model} (${deleteTarget.plate}) sera retiré du parc, avec ses documents, maintenances et états des lieux.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Supprimer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }

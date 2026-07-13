@@ -2,7 +2,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Car, CheckCircle2, KeyRound, Wrench, AlertTriangle, TrendingUp, ArrowUpRight } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
 import { StatusBadge } from "@/components/StatusBadge";
-import { vehicles, alerts, utilizationData, getVehicle } from "@/lib/mock-data";
+import { alerts, utilizationData } from "@/lib/mock-data";
+import { useFleetStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/")({
@@ -16,6 +17,7 @@ export const Route = createFileRoute("/")({
 });
 
 function Dashboard() {
+  const vehicles = useFleetStore((s) => s.vehicles);
   const total = vehicles.length;
   const available = vehicles.filter((v) => v.status === "available").length;
   const rented = vehicles.filter((v) => v.status === "rented").length;
@@ -32,6 +34,7 @@ function Dashboard() {
 
   const max = Math.max(...utilizationData.map((d) => d.rate));
   const avg = Math.round(utilizationData.reduce((s, d) => s + d.rate, 0) / utilizationData.length);
+  const getVehicle = (id: string) => vehicles.find((v) => v.id === id);
 
   return (
     <AppLayout title="Dashboard">
@@ -100,6 +103,7 @@ function Dashboard() {
             <ul className="mt-4 space-y-2.5">
               {alerts.map((a) => {
                 const v = getVehicle(a.vehicleId);
+                if (!v) return null;
                 const sev =
                   a.severity === "high"
                     ? "bg-destructive/10 text-destructive border-destructive/20"
@@ -117,7 +121,7 @@ function Dashboard() {
                       <div className="min-w-0 flex-1">
                         <p className="font-medium leading-snug">{a.message}</p>
                         <p className="mt-1 text-[11px] opacity-80">
-                          {v?.brand} {v?.model} · {v?.plate}
+                          {v.brand} {v.model} · {v.plate}
                         </p>
                       </div>
                       <ArrowUpRight className="h-3.5 w-3.5 shrink-0" />
