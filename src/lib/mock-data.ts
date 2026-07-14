@@ -81,6 +81,8 @@ export interface Maintenance {
   status: "upcoming" | "in_progress" | "completed";
   cost?: number;
   garage: string;
+  recurrence?: Recurrence;
+  seriesId?: string;
 }
 
 export interface DocumentItem {
