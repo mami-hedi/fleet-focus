@@ -80,7 +80,21 @@ function VehicleDetail() {
         </Link>
 
         <div className="grid gap-6 rounded-xl border border-border bg-card p-6 md:grid-cols-[300px_1fr]">
-          <img src={vehicle.image} alt="" className="aspect-[16/10] w-full rounded-lg object-cover" />
+          <div className="flex flex-col gap-2">
+            <img src={vehicle.image} alt="" className="aspect-[16/10] w-full rounded-lg object-cover" />
+            {gallery.length > 1 && (
+              <div className="flex gap-2 overflow-x-auto">
+                {gallery.map((p, i) => (
+                  <img
+                    key={i}
+                    src={p}
+                    alt=""
+                    className="h-14 w-20 shrink-0 rounded-md border border-border object-cover"
+                  />
+                ))}
+              </div>
+            )}
+          </div>
           <div className="flex flex-col gap-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
