@@ -13,7 +13,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { useFleetStore } from "@/lib/store";
-import type { Maintenance } from "@/lib/mock-data";
+import type { Maintenance, Recurrence } from "@/lib/mock-data";
+import { recurrenceLabels } from "@/lib/mock-data";
 
 interface Props {
   open: boolean;
