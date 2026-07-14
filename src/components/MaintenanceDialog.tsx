@@ -42,6 +42,7 @@ export function MaintenanceDialog({ open, onOpenChange, vehicleId }: Props) {
         scheduledDate: new Date().toISOString().slice(0, 10),
         garage: "",
         status: "upcoming",
+        recurrence: "none",
       });
     }
   }, [open, vehicleId]);
