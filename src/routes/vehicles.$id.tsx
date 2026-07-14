@@ -15,11 +15,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  fuelLabels,
-  docTypeLabels,
-  daysUntil,
-} from "@/lib/mock-data";
+import { fuelLabels, docTypeLabels, daysUntil, recurrenceLabels } from "@/lib/mock-data";
 import { useFleetStore } from "@/lib/store";
 import { VehicleFormDialog } from "@/components/VehicleFormDialog";
 import { MaintenanceDialog } from "@/components/MaintenanceDialog";
