@@ -121,6 +121,7 @@ function VehicleDetail() {
             <TabsTrigger value="inspections">États des lieux</TabsTrigger>
             <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
             <TabsTrigger value="documents">Documents</TabsTrigger>
+            <TabsTrigger value="history">Historique</TabsTrigger>
           </TabsList>
 
           <TabsContent value="general" className="mt-4">
