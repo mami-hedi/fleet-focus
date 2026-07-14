@@ -355,3 +355,20 @@ function UrgencyBadge({ urgency, days, date }: { urgency: "expired" | "soon" | "
     </span>
   );
 }
+
+function historyIcon(kind: import("@/lib/mock-data").HistoryEntry["kind"]) {
+  switch (kind) {
+    case "vehicle_created":
+      return { Icon: CarFront, bg: "bg-primary" };
+    case "vehicle_updated":
+      return { Icon: Pencil, bg: "bg-info" };
+    case "vehicle_deleted":
+      return { Icon: Trash2, bg: "bg-destructive" };
+    case "maintenance_scheduled":
+      return { Icon: Wrench, bg: "bg-warning" };
+    case "inspection_created":
+      return { Icon: ClipboardCheck, bg: "bg-success" };
+    default:
+      return { Icon: History, bg: "bg-muted-foreground" };
+  }
+}
