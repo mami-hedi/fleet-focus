@@ -240,6 +240,47 @@ function VehicleDetail() {
               </ul>
             </div>
           </TabsContent>
+
+          <TabsContent value="history" className="mt-4">
+            <div className="flex items-center justify-between pb-3">
+              <p className="text-sm text-muted-foreground">
+                {vHistory.length} événement{vHistory.length > 1 ? "s" : ""} enregistré{vHistory.length > 1 ? "s" : ""}
+              </p>
+            </div>
+            {vHistory.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border bg-card p-8 text-center">
+                <History className="mx-auto h-6 w-6 text-muted-foreground" />
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Aucun historique pour l'instant. Les modifications, maintenances et états des lieux seront listés ici.
+                </p>
+              </div>
+            ) : (
+              <ol className="relative space-y-4 border-l-2 border-border pl-6">
+                {vHistory.map((h) => {
+                  const cfg = historyIcon(h.kind);
+                  return (
+                    <li key={h.id} className="relative">
+                      <span className={cn(
+                        "absolute -left-[31px] flex h-6 w-6 items-center justify-center rounded-full ring-4 ring-background",
+                        cfg.bg,
+                      )}>
+                        <cfg.Icon className="h-3 w-3 text-white" />
+                      </span>
+                      <div className="rounded-xl border border-border bg-card p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-sm font-medium">{h.label}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(h.timestamp).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" })}
+                          </p>
+                        </div>
+                        {h.details && <p className="mt-1 text-xs text-muted-foreground">{h.details}</p>}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+          </TabsContent>
         </Tabs>
       </div>
 
