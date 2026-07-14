@@ -102,6 +102,20 @@ export function MaintenanceDialog({ open, onOpenChange, vehicleId }: Props) {
             <Label className="text-xs">Garage</Label>
             <Input value={form.garage} onChange={(e) => setForm((f) => ({ ...f, garage: e.target.value }))} placeholder="Nom du garage" />
           </div>
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs">Récurrence</Label>
+            <Select value={form.recurrence} onValueChange={(v) => setForm((f) => ({ ...f, recurrence: v as Recurrence }))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {(Object.keys(recurrenceLabels) as Recurrence[]).map((r) => (
+                  <SelectItem key={r} value={r}>{recurrenceLabels[r]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {form.recurrence !== "none" && (
+              <p className="text-[11px] text-muted-foreground">Les 4 prochaines occurrences seront ajoutées automatiquement au planning.</p>
+            )}
+          </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Annuler</Button>
             <Button type="submit">Planifier</Button>
