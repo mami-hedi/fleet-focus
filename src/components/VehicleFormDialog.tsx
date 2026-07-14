@@ -46,7 +46,7 @@ export function VehicleFormDialog({ open, onOpenChange, vehicle }: Props) {
     if (open) {
       if (vehicle) {
         const { id: _id, ...rest } = vehicle;
-        setForm(rest);
+        setForm({ ...empty, ...rest, photos: rest.photos ?? [] });
       } else setForm(empty);
     }
   }, [open, vehicle]);
