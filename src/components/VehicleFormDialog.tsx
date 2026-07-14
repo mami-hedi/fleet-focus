@@ -34,6 +34,7 @@ const empty: Omit<Vehicle, "id"> = {
   mileage: 0,
   status: "available",
   image: "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&w=800&q=70",
+  photos: [],
 };
 
 export function VehicleFormDialog({ open, onOpenChange, vehicle }: Props) {
