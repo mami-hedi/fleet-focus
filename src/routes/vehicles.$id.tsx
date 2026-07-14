@@ -39,6 +39,7 @@ function VehicleDetail() {
   const inspections = useFleetStore((s) => s.inspections);
   const maintenances = useFleetStore((s) => s.maintenances);
   const documents = useFleetStore((s) => s.documents);
+  const history = useFleetStore((s) => s.history);
   const deleteVehicle = useFleetStore((s) => s.deleteVehicle);
   const navigate = useNavigate();
   const [editOpen, setEditOpen] = useState(false);
@@ -50,6 +51,8 @@ function VehicleDetail() {
   const vInspections = inspections.filter((i) => i.vehicleId === vehicle.id).sort((a, b) => b.date.localeCompare(a.date));
   const vMaintenances = maintenances.filter((m) => m.vehicleId === vehicle.id);
   const vDocs = documents.filter((d) => d.vehicleId === vehicle.id);
+  const vHistory = history.filter((h) => h.vehicleId === vehicle.id).sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  const gallery = [vehicle.image, ...(vehicle.photos ?? [])].filter(Boolean);
 
   const handleDelete = () => {
     deleteVehicle(vehicle.id);
