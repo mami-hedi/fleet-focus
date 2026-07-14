@@ -31,6 +31,7 @@ export function MaintenanceDialog({ open, onOpenChange, vehicleId }: Props) {
     scheduledDate: new Date().toISOString().slice(0, 10),
     garage: "",
     status: "upcoming" as Maintenance["status"],
+    recurrence: "none" as Recurrence,
   });
 
   useEffect(() => {
