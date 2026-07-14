@@ -117,7 +117,30 @@ export function VehicleFormDialog({ open, onOpenChange, vehicle }: Props) {
             </Select>
           </Field>
           <div className="sm:col-span-2">
-            <Field label="URL image"><Input value={form.image} onChange={(e) => set("image", e.target.value)} /></Field>
+            <Field label="Image de couverture (URL)"><Input value={form.image} onChange={(e) => set("image", e.target.value)} /></Field>
+          </div>
+          <div className="sm:col-span-2">
+            <Field label="Photos supplémentaires (une URL par ligne)">
+              <textarea
+                value={(form.photos ?? []).join("\n")}
+                onChange={(e) =>
+                  set(
+                    "photos",
+                    e.target.value.split("\n").map((s) => s.trim()).filter(Boolean),
+                  )
+                }
+                rows={3}
+                className="min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                placeholder="https://.../photo1.jpg&#10;https://.../photo2.jpg"
+              />
+            </Field>
+            {(form.photos ?? []).length > 0 && (
+              <div className="mt-2 flex gap-2 overflow-x-auto">
+                {(form.photos ?? []).map((p, i) => (
+                  <img key={i} src={p} alt="" className="h-16 w-24 shrink-0 rounded-md border border-border object-cover" />
+                ))}
+              </div>
+            )}
           </div>
           <DialogFooter className="sm:col-span-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Annuler</Button>
