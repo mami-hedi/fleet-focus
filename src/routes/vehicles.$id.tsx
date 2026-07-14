@@ -198,7 +198,14 @@ function VehicleDetail() {
                   <li key={m.id} className="flex items-center gap-4 p-4">
                     <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted"><Wrench className="h-4 w-4 text-muted-foreground" /></span>
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">{m.type}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium">{m.type}</p>
+                        {m.recurrence && m.recurrence !== "none" && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                            <Repeat className="h-3 w-3" /> {recurrenceLabels[m.recurrence]}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs text-muted-foreground">
                         <Calendar className="mr-1 inline h-3 w-3" />
                         {new Date(m.scheduledDate).toLocaleDateString("fr-FR")} · {m.garage}
