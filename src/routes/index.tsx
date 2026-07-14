@@ -43,7 +43,7 @@ function Dashboard() {
           <p className="text-xs uppercase tracking-wider text-muted-foreground">Vue d'ensemble</p>
           <h2 className="mt-1 text-2xl font-semibold tracking-tight">Bonjour 👋</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Voici l'état actuel de votre parc au {new Date("2026-07-11").toLocaleDateString("fr-FR", { dateStyle: "long" })}.
+            Voici l'état actuel de votre parc au {new Date().toLocaleDateString("fr-FR", { dateStyle: "long" })}.
           </p>
         </div>
 

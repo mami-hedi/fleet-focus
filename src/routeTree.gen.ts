@@ -10,9 +10,18 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as VehiclesRouteImport } from './routes/vehicles'
+import { Route as StatsRouteImport } from './routes/stats'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as ReservationsRouteImport } from './routes/reservations'
 import { Route as MaintenanceRouteImport } from './routes/maintenance'
 import { Route as InspectionsRouteImport } from './routes/inspections'
+import { Route as IncidentsRouteImport } from './routes/incidents'
+import { Route as FuelRouteImport } from './routes/fuel'
+import { Route as DriversRouteImport } from './routes/drivers'
 import { Route as DocumentsRouteImport } from './routes/documents'
+import { Route as CalendarRouteImport } from './routes/calendar'
+import { Route as AlertsRouteImport } from './routes/alerts'
+import { Route as ActivityRouteImport } from './routes/activity'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as VehiclesIndexRouteImport } from './routes/vehicles.index'
 import { Route as VehiclesIdRouteImport } from './routes/vehicles.$id'
@@ -21,6 +30,21 @@ import { Route as InspectionsNewRouteImport } from './routes/inspections.new'
 const VehiclesRoute = VehiclesRouteImport.update({
   id: '/vehicles',
   path: '/vehicles',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StatsRoute = StatsRouteImport.update({
+  id: '/stats',
+  path: '/stats',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReservationsRoute = ReservationsRouteImport.update({
+  id: '/reservations',
+  path: '/reservations',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MaintenanceRoute = MaintenanceRouteImport.update({
@@ -33,9 +57,39 @@ const InspectionsRoute = InspectionsRouteImport.update({
   path: '/inspections',
   getParentRoute: () => rootRouteImport,
 } as any)
+const IncidentsRoute = IncidentsRouteImport.update({
+  id: '/incidents',
+  path: '/incidents',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FuelRoute = FuelRouteImport.update({
+  id: '/fuel',
+  path: '/fuel',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DriversRoute = DriversRouteImport.update({
+  id: '/drivers',
+  path: '/drivers',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DocumentsRoute = DocumentsRouteImport.update({
   id: '/documents',
   path: '/documents',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CalendarRoute = CalendarRouteImport.update({
+  id: '/calendar',
+  path: '/calendar',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AlertsRoute = AlertsRouteImport.update({
+  id: '/alerts',
+  path: '/alerts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ActivityRoute = ActivityRouteImport.update({
+  id: '/activity',
+  path: '/activity',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -61,9 +115,18 @@ const InspectionsNewRoute = InspectionsNewRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/activity': typeof ActivityRoute
+  '/alerts': typeof AlertsRoute
+  '/calendar': typeof CalendarRoute
   '/documents': typeof DocumentsRoute
+  '/drivers': typeof DriversRoute
+  '/fuel': typeof FuelRoute
+  '/incidents': typeof IncidentsRoute
   '/inspections': typeof InspectionsRouteWithChildren
   '/maintenance': typeof MaintenanceRoute
+  '/reservations': typeof ReservationsRoute
+  '/settings': typeof SettingsRoute
+  '/stats': typeof StatsRoute
   '/vehicles': typeof VehiclesRouteWithChildren
   '/inspections/new': typeof InspectionsNewRoute
   '/vehicles/$id': typeof VehiclesIdRoute
@@ -71,9 +134,18 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/activity': typeof ActivityRoute
+  '/alerts': typeof AlertsRoute
+  '/calendar': typeof CalendarRoute
   '/documents': typeof DocumentsRoute
+  '/drivers': typeof DriversRoute
+  '/fuel': typeof FuelRoute
+  '/incidents': typeof IncidentsRoute
   '/inspections': typeof InspectionsRouteWithChildren
   '/maintenance': typeof MaintenanceRoute
+  '/reservations': typeof ReservationsRoute
+  '/settings': typeof SettingsRoute
+  '/stats': typeof StatsRoute
   '/inspections/new': typeof InspectionsNewRoute
   '/vehicles/$id': typeof VehiclesIdRoute
   '/vehicles': typeof VehiclesIndexRoute
@@ -81,9 +153,18 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/activity': typeof ActivityRoute
+  '/alerts': typeof AlertsRoute
+  '/calendar': typeof CalendarRoute
   '/documents': typeof DocumentsRoute
+  '/drivers': typeof DriversRoute
+  '/fuel': typeof FuelRoute
+  '/incidents': typeof IncidentsRoute
   '/inspections': typeof InspectionsRouteWithChildren
   '/maintenance': typeof MaintenanceRoute
+  '/reservations': typeof ReservationsRoute
+  '/settings': typeof SettingsRoute
+  '/stats': typeof StatsRoute
   '/vehicles': typeof VehiclesRouteWithChildren
   '/inspections/new': typeof InspectionsNewRoute
   '/vehicles/$id': typeof VehiclesIdRoute
@@ -93,9 +174,18 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/activity'
+    | '/alerts'
+    | '/calendar'
     | '/documents'
+    | '/drivers'
+    | '/fuel'
+    | '/incidents'
     | '/inspections'
     | '/maintenance'
+    | '/reservations'
+    | '/settings'
+    | '/stats'
     | '/vehicles'
     | '/inspections/new'
     | '/vehicles/$id'
@@ -103,18 +193,36 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/activity'
+    | '/alerts'
+    | '/calendar'
     | '/documents'
+    | '/drivers'
+    | '/fuel'
+    | '/incidents'
     | '/inspections'
     | '/maintenance'
+    | '/reservations'
+    | '/settings'
+    | '/stats'
     | '/inspections/new'
     | '/vehicles/$id'
     | '/vehicles'
   id:
     | '__root__'
     | '/'
+    | '/activity'
+    | '/alerts'
+    | '/calendar'
     | '/documents'
+    | '/drivers'
+    | '/fuel'
+    | '/incidents'
     | '/inspections'
     | '/maintenance'
+    | '/reservations'
+    | '/settings'
+    | '/stats'
     | '/vehicles'
     | '/inspections/new'
     | '/vehicles/$id'
@@ -123,9 +231,18 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ActivityRoute: typeof ActivityRoute
+  AlertsRoute: typeof AlertsRoute
+  CalendarRoute: typeof CalendarRoute
   DocumentsRoute: typeof DocumentsRoute
+  DriversRoute: typeof DriversRoute
+  FuelRoute: typeof FuelRoute
+  IncidentsRoute: typeof IncidentsRoute
   InspectionsRoute: typeof InspectionsRouteWithChildren
   MaintenanceRoute: typeof MaintenanceRoute
+  ReservationsRoute: typeof ReservationsRoute
+  SettingsRoute: typeof SettingsRoute
+  StatsRoute: typeof StatsRoute
   VehiclesRoute: typeof VehiclesRouteWithChildren
 }
 
@@ -136,6 +253,27 @@ declare module '@tanstack/react-router' {
       path: '/vehicles'
       fullPath: '/vehicles'
       preLoaderRoute: typeof VehiclesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/stats': {
+      id: '/stats'
+      path: '/stats'
+      fullPath: '/stats'
+      preLoaderRoute: typeof StatsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reservations': {
+      id: '/reservations'
+      path: '/reservations'
+      fullPath: '/reservations'
+      preLoaderRoute: typeof ReservationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/maintenance': {
@@ -152,11 +290,53 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InspectionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/incidents': {
+      id: '/incidents'
+      path: '/incidents'
+      fullPath: '/incidents'
+      preLoaderRoute: typeof IncidentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/fuel': {
+      id: '/fuel'
+      path: '/fuel'
+      fullPath: '/fuel'
+      preLoaderRoute: typeof FuelRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/drivers': {
+      id: '/drivers'
+      path: '/drivers'
+      fullPath: '/drivers'
+      preLoaderRoute: typeof DriversRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/documents': {
       id: '/documents'
       path: '/documents'
       fullPath: '/documents'
       preLoaderRoute: typeof DocumentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/calendar': {
+      id: '/calendar'
+      path: '/calendar'
+      fullPath: '/calendar'
+      preLoaderRoute: typeof CalendarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/alerts': {
+      id: '/alerts'
+      path: '/alerts'
+      fullPath: '/alerts'
+      preLoaderRoute: typeof AlertsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/activity': {
+      id: '/activity'
+      path: '/activity'
+      fullPath: '/activity'
+      preLoaderRoute: typeof ActivityRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -218,11 +398,30 @@ const VehiclesRouteWithChildren = VehiclesRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ActivityRoute: ActivityRoute,
+  AlertsRoute: AlertsRoute,
+  CalendarRoute: CalendarRoute,
   DocumentsRoute: DocumentsRoute,
+  DriversRoute: DriversRoute,
+  FuelRoute: FuelRoute,
+  IncidentsRoute: IncidentsRoute,
   InspectionsRoute: InspectionsRouteWithChildren,
   MaintenanceRoute: MaintenanceRoute,
+  ReservationsRoute: ReservationsRoute,
+  SettingsRoute: SettingsRoute,
+  StatsRoute: StatsRoute,
   VehiclesRoute: VehiclesRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

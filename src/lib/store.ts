@@ -19,11 +19,14 @@ interface FleetState {
   maintenances: Maintenance[];
   documents: DocumentItem[];
   history: HistoryEntry[];
+  dismissedAlertIds: string[];
   addVehicle: (v: Omit<Vehicle, "id">) => string;
   updateVehicle: (id: string, patch: Partial<Vehicle>) => void;
   deleteVehicle: (id: string) => void;
   addMaintenance: (m: Omit<Maintenance, "id">) => void;
   addInspection: (i: Omit<Inspection, "id">) => void;
+  addDocument: (d: Omit<DocumentItem, "id">) => void;
+  dismissAlert: (id: string) => void;
 }
 
 function nowIso() {
@@ -42,6 +45,8 @@ export const useFleetStore = create<FleetState>((set) => ({
   maintenances: [...initialMaintenances],
   documents: [...initialDocuments],
   history: [],
+  dismissedAlertIds: [],
+
   addVehicle: (v) => {
     const id = `v${Date.now()}`;
     const entry: HistoryEntry = {
@@ -58,6 +63,7 @@ export const useFleetStore = create<FleetState>((set) => ({
     }));
     return id;
   },
+
   updateVehicle: (id, patch) =>
     set((s) => {
       const before = s.vehicles.find((v) => v.id === id);
@@ -79,6 +85,7 @@ export const useFleetStore = create<FleetState>((set) => ({
         history: changed.length ? [entry, ...s.history] : s.history,
       };
     }),
+
   deleteVehicle: (id) =>
     set((s) => ({
       vehicles: s.vehicles.filter((v) => v.id !== id),
@@ -87,6 +94,7 @@ export const useFleetStore = create<FleetState>((set) => ({
       documents: s.documents.filter((d) => d.vehicleId !== id),
       history: s.history.filter((h) => h.vehicleId !== id),
     })),
+
   addMaintenance: (m) =>
     set((s) => {
       const rec = m.recurrence ?? "none";
@@ -122,6 +130,7 @@ export const useFleetStore = create<FleetState>((set) => ({
         history: [entry, ...s.history],
       };
     }),
+
   addInspection: (i) =>
     set((s) => {
       const id = `i${Date.now()}`;
@@ -138,6 +147,28 @@ export const useFleetStore = create<FleetState>((set) => ({
         history: [entry, ...s.history],
       };
     }),
+
+  addDocument: (d) =>
+    set((s) => {
+      const id = `doc-${Date.now()}`;
+      const entry: HistoryEntry = {
+        id: `h${Date.now()}`,
+        vehicleId: d.vehicleId,
+        timestamp: nowIso(),
+        kind: "document_created",
+        label: "Document ajouté",
+        details: `${d.type} — ${d.number}`,
+      };
+      return {
+        documents: [{ ...d, id }, ...s.documents],
+        history: [entry, ...s.history],
+      };
+    }),
+
+  dismissAlert: (id) =>
+    set((s) => ({
+      dismissedAlertIds: [...s.dismissedAlertIds, id],
+    })),
 }));
 
 export const useVehicle = (id: string) =>

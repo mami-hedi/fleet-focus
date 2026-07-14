@@ -88,7 +88,7 @@ export interface Maintenance {
 export interface DocumentItem {
   id: string;
   vehicleId: string;
-  type: "carte_grise" | "assurance" | "controle_technique";
+  type: "carte_grise" | "assurance" | "controle_technique" | "Contrat de location" | "Constat assurance";
   number: string;
   expiryDate: string;
 }
@@ -175,6 +175,8 @@ export const docTypeLabels = {
   carte_grise: "Carte grise",
   assurance: "Assurance",
   controle_technique: "Contrôle technique",
+  Contrat_de_location: "Contrat de location",
+  Constat_assurance: "Constat assurance",
 } as const;
 
 export function getVehicle(id: string) {
