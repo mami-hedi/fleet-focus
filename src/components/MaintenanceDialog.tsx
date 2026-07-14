@@ -13,7 +13,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { useFleetStore } from "@/lib/store";
-import type { Maintenance } from "@/lib/mock-data";
+import type { Maintenance, Recurrence } from "@/lib/mock-data";
+import { recurrenceLabels } from "@/lib/mock-data";
 
 interface Props {
   open: boolean;
@@ -30,6 +31,7 @@ export function MaintenanceDialog({ open, onOpenChange, vehicleId }: Props) {
     scheduledDate: new Date().toISOString().slice(0, 10),
     garage: "",
     status: "upcoming" as Maintenance["status"],
+    recurrence: "none" as Recurrence,
   });
 
   useEffect(() => {
@@ -40,6 +42,7 @@ export function MaintenanceDialog({ open, onOpenChange, vehicleId }: Props) {
         scheduledDate: new Date().toISOString().slice(0, 10),
         garage: "",
         status: "upcoming",
+        recurrence: "none",
       });
     }
   }, [open, vehicleId]);
@@ -98,6 +101,20 @@ export function MaintenanceDialog({ open, onOpenChange, vehicleId }: Props) {
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs">Garage</Label>
             <Input value={form.garage} onChange={(e) => setForm((f) => ({ ...f, garage: e.target.value }))} placeholder="Nom du garage" />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs">Récurrence</Label>
+            <Select value={form.recurrence} onValueChange={(v) => setForm((f) => ({ ...f, recurrence: v as Recurrence }))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {(Object.keys(recurrenceLabels) as Recurrence[]).map((r) => (
+                  <SelectItem key={r} value={r}>{recurrenceLabels[r]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {form.recurrence !== "none" && (
+              <p className="text-[11px] text-muted-foreground">Les 4 prochaines occurrences seront ajoutées automatiquement au planning.</p>
+            )}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Annuler</Button>

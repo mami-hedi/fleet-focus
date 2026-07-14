@@ -14,6 +14,35 @@ export interface Vehicle {
   mileage: number;
   status: VehicleStatus;
   image: string;
+  photos?: string[];
+}
+
+export type Recurrence = "none" | "monthly" | "quarterly" | "biannual" | "annual";
+
+export const recurrenceLabels: Record<Recurrence, string> = {
+  none: "Aucune",
+  monthly: "Mensuelle",
+  quarterly: "Trimestrielle",
+  biannual: "Semestrielle",
+  annual: "Annuelle",
+};
+
+export const recurrenceMonths: Record<Recurrence, number> = {
+  none: 0, monthly: 1, quarterly: 3, biannual: 6, annual: 12,
+};
+
+export interface HistoryEntry {
+  id: string;
+  vehicleId: string;
+  timestamp: string;
+  kind:
+    | "vehicle_created"
+    | "vehicle_updated"
+    | "vehicle_deleted"
+    | "maintenance_scheduled"
+    | "inspection_created";
+  label: string;
+  details?: string;
 }
 
 export interface Alert {
@@ -52,6 +81,8 @@ export interface Maintenance {
   status: "upcoming" | "in_progress" | "completed";
   cost?: number;
   garage: string;
+  recurrence?: Recurrence;
+  seriesId?: string;
 }
 
 export interface DocumentItem {

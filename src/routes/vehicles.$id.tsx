@@ -1,6 +1,6 @@
 import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { ArrowLeft, Calendar, Wrench, FileText, CheckCircle2, XCircle, AlertTriangle, Pencil, Trash2, Plus } from "lucide-react";
+import { ArrowLeft, Calendar, Wrench, FileText, CheckCircle2, XCircle, AlertTriangle, Pencil, Trash2, Plus, History, Repeat, ClipboardCheck, CarFront } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -15,11 +15,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  fuelLabels,
-  docTypeLabels,
-  daysUntil,
-} from "@/lib/mock-data";
+import { fuelLabels, docTypeLabels, daysUntil, recurrenceLabels } from "@/lib/mock-data";
 import { useFleetStore } from "@/lib/store";
 import { VehicleFormDialog } from "@/components/VehicleFormDialog";
 import { MaintenanceDialog } from "@/components/MaintenanceDialog";
@@ -43,6 +39,7 @@ function VehicleDetail() {
   const inspections = useFleetStore((s) => s.inspections);
   const maintenances = useFleetStore((s) => s.maintenances);
   const documents = useFleetStore((s) => s.documents);
+  const history = useFleetStore((s) => s.history);
   const deleteVehicle = useFleetStore((s) => s.deleteVehicle);
   const navigate = useNavigate();
   const [editOpen, setEditOpen] = useState(false);
@@ -54,6 +51,8 @@ function VehicleDetail() {
   const vInspections = inspections.filter((i) => i.vehicleId === vehicle.id).sort((a, b) => b.date.localeCompare(a.date));
   const vMaintenances = maintenances.filter((m) => m.vehicleId === vehicle.id);
   const vDocs = documents.filter((d) => d.vehicleId === vehicle.id);
+  const vHistory = history.filter((h) => h.vehicleId === vehicle.id).sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  const gallery = [vehicle.image, ...(vehicle.photos ?? [])].filter(Boolean);
 
   const handleDelete = () => {
     deleteVehicle(vehicle.id);
@@ -81,7 +80,21 @@ function VehicleDetail() {
         </Link>
 
         <div className="grid gap-6 rounded-xl border border-border bg-card p-6 md:grid-cols-[300px_1fr]">
-          <img src={vehicle.image} alt="" className="aspect-[16/10] w-full rounded-lg object-cover" />
+          <div className="flex flex-col gap-2">
+            <img src={vehicle.image} alt="" className="aspect-[16/10] w-full rounded-lg object-cover" />
+            {gallery.length > 1 && (
+              <div className="flex gap-2 overflow-x-auto">
+                {gallery.map((p, i) => (
+                  <img
+                    key={i}
+                    src={p}
+                    alt=""
+                    className="h-14 w-20 shrink-0 rounded-md border border-border object-cover"
+                  />
+                ))}
+              </div>
+            )}
+          </div>
           <div className="flex flex-col gap-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -108,6 +121,7 @@ function VehicleDetail() {
             <TabsTrigger value="inspections">États des lieux</TabsTrigger>
             <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
             <TabsTrigger value="documents">Documents</TabsTrigger>
+            <TabsTrigger value="history">Historique</TabsTrigger>
           </TabsList>
 
           <TabsContent value="general" className="mt-4">
@@ -184,7 +198,14 @@ function VehicleDetail() {
                   <li key={m.id} className="flex items-center gap-4 p-4">
                     <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted"><Wrench className="h-4 w-4 text-muted-foreground" /></span>
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">{m.type}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium">{m.type}</p>
+                        {m.recurrence && m.recurrence !== "none" && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                            <Repeat className="h-3 w-3" /> {recurrenceLabels[m.recurrence]}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs text-muted-foreground">
                         <Calendar className="mr-1 inline h-3 w-3" />
                         {new Date(m.scheduledDate).toLocaleDateString("fr-FR")} · {m.garage}
@@ -218,6 +239,47 @@ function VehicleDetail() {
                 })}
               </ul>
             </div>
+          </TabsContent>
+
+          <TabsContent value="history" className="mt-4">
+            <div className="flex items-center justify-between pb-3">
+              <p className="text-sm text-muted-foreground">
+                {vHistory.length} événement{vHistory.length > 1 ? "s" : ""} enregistré{vHistory.length > 1 ? "s" : ""}
+              </p>
+            </div>
+            {vHistory.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border bg-card p-8 text-center">
+                <History className="mx-auto h-6 w-6 text-muted-foreground" />
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Aucun historique pour l'instant. Les modifications, maintenances et états des lieux seront listés ici.
+                </p>
+              </div>
+            ) : (
+              <ol className="relative space-y-4 border-l-2 border-border pl-6">
+                {vHistory.map((h) => {
+                  const cfg = historyIcon(h.kind);
+                  return (
+                    <li key={h.id} className="relative">
+                      <span className={cn(
+                        "absolute -left-[31px] flex h-6 w-6 items-center justify-center rounded-full ring-4 ring-background",
+                        cfg.bg,
+                      )}>
+                        <cfg.Icon className="h-3 w-3 text-white" />
+                      </span>
+                      <div className="rounded-xl border border-border bg-card p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-sm font-medium">{h.label}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(h.timestamp).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" })}
+                          </p>
+                        </div>
+                        {h.details && <p className="mt-1 text-xs text-muted-foreground">{h.details}</p>}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
           </TabsContent>
         </Tabs>
       </div>
@@ -292,4 +354,21 @@ function UrgencyBadge({ urgency, days, date }: { urgency: "expired" | "soon" | "
       {cfg.label}
     </span>
   );
+}
+
+function historyIcon(kind: import("@/lib/mock-data").HistoryEntry["kind"]) {
+  switch (kind) {
+    case "vehicle_created":
+      return { Icon: CarFront, bg: "bg-primary" };
+    case "vehicle_updated":
+      return { Icon: Pencil, bg: "bg-info" };
+    case "vehicle_deleted":
+      return { Icon: Trash2, bg: "bg-destructive" };
+    case "maintenance_scheduled":
+      return { Icon: Wrench, bg: "bg-warning" };
+    case "inspection_created":
+      return { Icon: ClipboardCheck, bg: "bg-success" };
+    default:
+      return { Icon: History, bg: "bg-muted-foreground" };
+  }
 }
