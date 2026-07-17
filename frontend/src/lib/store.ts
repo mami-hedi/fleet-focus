@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import {
-  vehicles as initialVehicles,
   inspections as initialInspections,
   maintenances as initialMaintenances,
   documents as initialDocuments,
@@ -12,6 +11,8 @@ import {
   type DocumentItem,
   type HistoryEntry,
 } from "./mock-data";
+import { vehicleService } from "./vehicleService";
+import { ApiRequestError } from "./api-client";
 
 interface FleetState {
   vehicles: Vehicle[];
@@ -20,9 +21,13 @@ interface FleetState {
   documents: DocumentItem[];
   history: HistoryEntry[];
   dismissedAlertIds: string[];
-  addVehicle: (v: Omit<Vehicle, "id">) => string;
-  updateVehicle: (id: string, patch: Partial<Vehicle>) => void;
-  deleteVehicle: (id: string) => void;
+  vehiclesLoaded: boolean;
+  vehiclesLoading: boolean;
+  vehiclesError: string | null;
+  fetchVehicles: () => Promise<void>;
+  addVehicle: (v: Omit<Vehicle, "id">) => Promise<Vehicle>;
+  updateVehicle: (id: string, patch: Partial<Vehicle>) => Promise<void>;
+  deleteVehicle: (id: string) => Promise<void>;
   addMaintenance: (m: Omit<Maintenance, "id">) => void;
   addInspection: (i: Omit<Inspection, "id">) => void;
   addDocument: (d: Omit<DocumentItem, "id">) => void;
@@ -39,61 +44,79 @@ function addMonths(dateStr: string, months: number) {
   return d.toISOString().slice(0, 10);
 }
 
-export const useFleetStore = create<FleetState>((set) => ({
-  vehicles: [...initialVehicles],
+export const useFleetStore = create<FleetState>((set, get) => ({
+  vehicles: [],
   inspections: [...initialInspections],
   maintenances: [...initialMaintenances],
   documents: [...initialDocuments],
   history: [],
   dismissedAlertIds: [],
+  vehiclesLoaded: false,
+  vehiclesLoading: false,
+  vehiclesError: null,
 
-  addVehicle: (v) => {
-    const id = `v${Date.now()}`;
+  fetchVehicles: async () => {
+    // Évite les refetch en boucle si plusieurs composants montent en même temps.
+    if (get().vehiclesLoading) return;
+    set({ vehiclesLoading: true, vehiclesError: null });
+    try {
+      const vehicles = await vehicleService.list();
+      set({ vehicles, vehiclesLoaded: true, vehiclesLoading: false });
+    } catch (err) {
+      const message = err instanceof ApiRequestError ? err.detail : (err as Error).message;
+      set({ vehiclesError: message, vehiclesLoading: false });
+    }
+  },
+
+  addVehicle: async (v) => {
+    const created = await vehicleService.create(v);
+    const entry: HistoryEntry = {
+      id: `h${Date.now()}`,
+      vehicleId: created.id,
+      timestamp: nowIso(),
+      kind: "vehicle_created",
+      label: "Véhicule ajouté au parc",
+      details: `${created.brand} ${created.model} — ${created.plate}`,
+    };
+    set((s) => ({
+      vehicles: [created, ...s.vehicles],
+      history: [entry, ...s.history],
+    }));
+    return created;
+  },
+
+  updateVehicle: async (id, patch) => {
+    const before = get().vehicles.find((v) => v.id === id);
+    const updated = await vehicleService.update(id, patch);
+    const changed = before
+      ? (Object.keys(patch) as (keyof Vehicle)[]).filter(
+          (k) => JSON.stringify(before[k]) !== JSON.stringify(patch[k]),
+        )
+      : [];
     const entry: HistoryEntry = {
       id: `h${Date.now()}`,
       vehicleId: id,
       timestamp: nowIso(),
-      kind: "vehicle_created",
-      label: "Véhicule ajouté au parc",
-      details: `${v.brand} ${v.model} — ${v.plate}`,
+      kind: "vehicle_updated",
+      label: "Fiche véhicule modifiée",
+      details: changed.length ? `Champs : ${changed.join(", ")}` : undefined,
     };
     set((s) => ({
-      vehicles: [{ ...v, id }, ...s.vehicles],
-      history: [entry, ...s.history],
+      vehicles: s.vehicles.map((v) => (v.id === id ? updated : v)),
+      history: changed.length ? [entry, ...s.history] : s.history,
     }));
-    return id;
   },
 
-  updateVehicle: (id, patch) =>
-    set((s) => {
-      const before = s.vehicles.find((v) => v.id === id);
-      const changed = before
-        ? (Object.keys(patch) as (keyof Vehicle)[]).filter(
-            (k) => JSON.stringify(before[k]) !== JSON.stringify(patch[k]),
-          )
-        : [];
-      const entry: HistoryEntry = {
-        id: `h${Date.now()}`,
-        vehicleId: id,
-        timestamp: nowIso(),
-        kind: "vehicle_updated",
-        label: "Fiche véhicule modifiée",
-        details: changed.length ? `Champs : ${changed.join(", ")}` : undefined,
-      };
-      return {
-        vehicles: s.vehicles.map((v) => (v.id === id ? { ...v, ...patch } : v)),
-        history: changed.length ? [entry, ...s.history] : s.history,
-      };
-    }),
-
-  deleteVehicle: (id) =>
+  deleteVehicle: async (id) => {
+    await vehicleService.remove(id);
     set((s) => ({
       vehicles: s.vehicles.filter((v) => v.id !== id),
       inspections: s.inspections.filter((i) => i.vehicleId !== id),
       maintenances: s.maintenances.filter((m) => m.vehicleId !== id),
       documents: s.documents.filter((d) => d.vehicleId !== id),
       history: s.history.filter((h) => h.vehicleId !== id),
-    })),
+    }));
+  },
 
   addMaintenance: (m) =>
     set((s) => {

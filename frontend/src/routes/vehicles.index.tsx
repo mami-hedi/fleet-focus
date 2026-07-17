@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { Search, LayoutGrid, List, Plus, Pencil, Trash2 } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
 import { VehicleCard } from "@/components/VehicleCard";
+import { VehicleImage } from "@/components/VehicleImage";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -44,6 +45,8 @@ export const Route = createFileRoute("/vehicles/")({
 function VehiclesList() {
   const vehicles = useFleetStore((s) => s.vehicles);
   const deleteVehicle = useFleetStore((s) => s.deleteVehicle);
+  const vehiclesLoading = useFleetStore((s) => s.vehiclesLoading);
+  const vehiclesError = useFleetStore((s) => s.vehiclesError);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<VehicleStatus | "all">("all");
   const [brand, setBrand] = useState<string>("all");
@@ -73,10 +76,14 @@ function VehiclesList() {
 
   const openAdd = () => { setEditing(null); setDialogOpen(true); };
   const openEdit = (v: Vehicle) => { setEditing(v); setDialogOpen(true); };
-  const confirmDelete = () => {
-    if (deleteTarget) {
-      deleteVehicle(deleteTarget.id);
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await deleteVehicle(deleteTarget.id);
       toast.success(`${deleteTarget.brand} ${deleteTarget.model} supprimé`);
+    } catch (err) {
+      toast.error((err as Error).message || "Erreur lors de la suppression");
+    } finally {
       setDeleteTarget(null);
     }
   };
@@ -147,7 +154,15 @@ function VehiclesList() {
 
         <p className="text-xs text-muted-foreground">{filtered.length} véhicule{filtered.length > 1 ? "s" : ""}</p>
 
-        {view === "grid" ? (
+        {vehiclesError && (
+          <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+            {vehiclesError}
+          </div>
+        )}
+
+        {vehiclesLoading && vehicles.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Chargement des véhicules...</p>
+        ) : view === "grid" ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filtered.map((v) => (
               <div key={v.id} className="group relative">
@@ -182,7 +197,7 @@ function VehiclesList() {
                   <TableRow key={v.id}>
                     <TableCell>
                       <Link to="/vehicles/$id" params={{ id: v.id }} className="flex items-center gap-3">
-                        <img src={v.image} alt="" className="h-10 w-16 rounded object-cover" />
+                        <VehicleImage src={v.image} alt="" className="h-10 w-16 shrink-0 rounded object-cover" iconClassName="h-4 w-4" />
                         <span className="font-medium">{v.brand} {v.model}</span>
                       </Link>
                     </TableCell>

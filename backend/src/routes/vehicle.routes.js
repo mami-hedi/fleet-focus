@@ -5,7 +5,10 @@ const validate = require("../middlewares/validate.middleware");
 const { authenticate } = require("../middlewares/auth.middleware");
 
 const router = Router();
-router.use(authenticate);
+
+// ⚠️ DEV ONLY — authentification désactivée temporairement le temps de brancher
+// le login côté frontend. À réactiver avant toute mise en production :
+// router.use(authenticate);
 
 const vehicleRules = [
   body("brand").trim().notEmpty(),

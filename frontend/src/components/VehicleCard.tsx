@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { Fuel, Gauge } from "lucide-react";
 import { fuelLabels, type Vehicle } from "@/lib/mock-data";
 import { StatusBadge } from "./StatusBadge";
+import { VehicleImage } from "./VehicleImage";
 
 export function VehicleCard({ vehicle }: { vehicle: Vehicle }) {
   return (
@@ -11,7 +12,7 @@ export function VehicleCard({ vehicle }: { vehicle: Vehicle }) {
       className="group flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-all hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5"
     >
       <div className="relative aspect-[16/10] overflow-hidden bg-muted">
-        <img
+        <VehicleImage
           src={vehicle.image}
           alt={`${vehicle.brand} ${vehicle.model}`}
           className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"

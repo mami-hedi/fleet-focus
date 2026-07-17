@@ -2,6 +2,7 @@ import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-ro
 import { useState } from "react";
 import { ArrowLeft, Calendar, Wrench, FileText, CheckCircle2, XCircle, AlertTriangle, Pencil, Trash2, Plus, History, Repeat, ClipboardCheck, CarFront } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
+import { VehicleImage } from "@/components/VehicleImage";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -54,10 +55,14 @@ function VehicleDetail() {
   const vHistory = history.filter((h) => h.vehicleId === vehicle.id).sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   const gallery = [vehicle.image, ...(vehicle.photos ?? [])].filter(Boolean);
 
-  const handleDelete = () => {
-    deleteVehicle(vehicle.id);
-    toast.success("Véhicule supprimé");
-    navigate({ to: "/vehicles" });
+  const handleDelete = async () => {
+    try {
+      await deleteVehicle(vehicle.id);
+      toast.success("Véhicule supprimé");
+      navigate({ to: "/vehicles" });
+    } catch (err) {
+      toast.error((err as Error).message || "Erreur lors de la suppression");
+    }
   };
 
   return (
@@ -81,11 +86,11 @@ function VehicleDetail() {
 
         <div className="grid gap-6 rounded-xl border border-border bg-card p-6 md:grid-cols-[300px_1fr]">
           <div className="flex flex-col gap-2">
-            <img src={vehicle.image} alt="" className="aspect-[16/10] w-full rounded-lg object-cover" />
+            <VehicleImage src={vehicle.image} alt="" className="aspect-[16/10] w-full rounded-lg object-cover" iconClassName="h-10 w-10" />
             {gallery.length > 1 && (
               <div className="flex gap-2 overflow-x-auto">
                 {gallery.map((p, i) => (
-                  <img
+                  <VehicleImage
                     key={i}
                     src={p}
                     alt=""
