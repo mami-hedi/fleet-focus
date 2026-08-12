@@ -19,7 +19,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
-import { useDrivers, useCreateDriver, useUpdateDriver, useDeleteDriver } from "@/lib/hooks/useDrivers";
+import { useDrivers, useCreateDriver, useUpdateDriver, useDeleteDriver } from "@/hooks/useDrivers";
 import type { Driver, DriverInput } from "@/lib/api/drivers";
 import { ApiClientError } from "@/lib/api/client";
 
@@ -29,6 +29,20 @@ export const Route = createFileRoute("/drivers")({
 });
 
 const ITEMS_PER_PAGE = 10;
+
+// Base publique de l'API, pour préfixer les chemins de photo relatifs renvoyés par le backend.
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4000/api";
+const FILE_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, "");
+
+// Défensif : d'anciens conducteurs créés avant le fix upload peuvent encore avoir
+// un base64 brut ("data:image/...") stocké dans "photo" au lieu d'un chemin relatif.
+// On ne préfixe que les chemins relatifs ; on ignore les valeurs déjà invalides/complètes.
+function resolvePhotoUrl(photo: string | null): string | null {
+  if (!photo) return null;
+  if (photo.startsWith("http://") || photo.startsWith("https://")) return photo;
+  if (photo.startsWith("data:")) return null; // legacy corrompu : on affiche les initiales plutôt qu'une image cassée
+  return `${FILE_ORIGIN}${photo}`;
+}
 
 function useDebouncedValue<T>(value: T, delay = 350): T {
   const [debounced, setDebounced] = useState(value);
@@ -211,8 +225,12 @@ function DriversPage() {
                       <TableRow key={d.id}>
                         <TableCell>
                           <div className="flex items-center gap-3">
-                            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-muted text-sm font-medium">
-                              {d.firstName[0]}{d.lastName[0]}
+                            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-muted text-sm font-medium overflow-hidden">
+                              {resolvePhotoUrl(d.photo) ? (
+                                <img src={resolvePhotoUrl(d.photo)!} alt="" className="h-full w-full object-cover" />
+                              ) : (
+                                <>{d.firstName[0]}{d.lastName[0]}</>
+                              )}
                             </div>
                             <div>
                               <p className="text-sm font-medium">{d.firstName} {d.lastName}</p>
@@ -290,8 +308,12 @@ function DriversPage() {
                   <div key={d.id} className="rounded-xl border border-border bg-card p-4 space-y-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-sm font-medium">
-                          {d.firstName[0]}{d.lastName[0]}
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-sm font-medium overflow-hidden">
+                          {resolvePhotoUrl(d.photo) ? (
+                            <img src={resolvePhotoUrl(d.photo)!} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <>{d.firstName[0]}{d.lastName[0]}</>
+                          )}
                         </div>
                         <div>
                           <p className="text-sm font-medium">{d.firstName} {d.lastName}</p>
@@ -486,15 +508,21 @@ function DriverDialog({
   const [licenseNumber, setLicenseNumber] = useState(driver?.licenseNumber ?? "");
   const [licenseExpiry, setLicenseExpiry] = useState(driver?.licenseExpiry ?? "");
   const [status, setStatus] = useState<"active" | "inactive">(driver?.status ?? "active");
-  const [photo, setPhoto] = useState<string | null>(driver?.photo ?? null);
+
+  // Le fichier réel envoyé au backend (upload multipart). Reste null si on garde la photo existante.
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  // Aperçu affiché : soit la photo existante (préfixée par FILE_ORIGIN), soit l'aperçu local du nouveau fichier.
+  const [photoPreview, setPhotoPreview] = useState<string | null>(
+    driver?.photo ? resolvePhotoUrl(driver.photo) : null
+  );
   const [isDragging, setIsDragging] = useState(false);
 
   const handleFile = (file: File) => {
-    if (file.type.startsWith("image/")) {
-      const reader = new FileReader();
-      reader.onload = (e) => setPhoto(e.target?.result as string);
-      reader.readAsDataURL(file);
-    }
+    if (!file.type.startsWith("image/")) return;
+    setPhotoFile(file);
+    const reader = new FileReader();
+    reader.onload = (e) => setPhotoPreview(e.target?.result as string); // aperçu local uniquement
+    reader.readAsDataURL(file);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -509,7 +537,8 @@ function DriverDialog({
         licenseNumber: licenseNumber.toUpperCase(),
         licenseExpiry,
         status,
-        photo: photo ?? undefined,
+        // undefined si aucune nouvelle photo choisie : le backend garde alors la photo existante.
+        photo: photoFile ?? undefined,
       },
       driver?.id
     );
@@ -534,21 +563,29 @@ function DriverDialog({
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Photo */}
           <div>
-            <label className="block text-sm font-medium mb-1.5">Photo</label>
+            <label className="block text-sm font-medium mb-1.5">
+              Photo {driver && <span className="text-muted-foreground font-normal">(laisser vide pour conserver l'actuelle)</span>}
+            </label>
             <div
               onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
               onDragLeave={() => setIsDragging(false)}
               onDrop={(e) => { e.preventDefault(); setIsDragging(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
               className={cn(
                 "relative rounded-xl border-2 border-dashed p-4 text-center transition-colors",
-                isDragging ? "border-primary bg-primary/5" : photo ? "border-success bg-success/5" : "border-muted-foreground/25 hover:border-muted-foreground/50"
+                isDragging ? "border-primary bg-primary/5" : photoPreview ? "border-success bg-success/5" : "border-muted-foreground/25 hover:border-muted-foreground/50"
               )}
             >
               <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-              {photo ? (
+              {photoPreview ? (
                 <div className="space-y-2">
-                  <img src={photo} alt="" className="mx-auto h-24 rounded-full object-cover w-24" />
-                  <button type="button" onClick={(e) => { e.stopPropagation(); setPhoto(null); }} className="text-xs text-destructive hover:underline">Supprimer</button>
+                  <img src={photoPreview} alt="" className="mx-auto h-24 rounded-full object-cover w-24" />
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setPhotoFile(null); setPhotoPreview(null); }}
+                    className="text-xs text-destructive hover:underline"
+                  >
+                    Supprimer
+                  </button>
                 </div>
               ) : (
                 <div className="space-y-1">

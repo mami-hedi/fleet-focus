@@ -34,9 +34,9 @@ interface AppSettings {
 
 const defaultCompany: CompanySettings = {
   name: "MH Digital Solution",
-  email: "contact@mhdigital.tn",
-  phone: "+216 71 123 456",
-  address: "Tunis, Tunisie",
+  email: "contact@mh-digital-solution.com",
+  phone: "+216 58 146 177",
+  address: "Hammamet, Nabeul, Tunisie",
   siret: "12345678901234",
   tva: "FR12345678901",
 };

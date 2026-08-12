@@ -16,19 +16,9 @@ import { toast } from "sonner";
 import { useFleetStore } from "@/lib/store";
 import type { FuelType, Vehicle, VehicleStatus } from "@/lib/mock-data";
 import { fuelLabels, statusLabels } from "@/lib/mock-data";
+import type { VehicleInput } from "@/lib/vehicleService";
 import { ApiRequestError } from "@/lib/api-client";
 import { VehicleImage } from "@/components/VehicleImage";
-
-// Convertit un fichier image sélectionné en data URL valide
-// (avec le préfixe "data:image/...;base64," requis pour un <img src>).
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(new Error("Impossible de lire le fichier"));
-    reader.readAsDataURL(file);
-  });
-}
 
 interface Props {
   open: boolean;
@@ -36,7 +26,24 @@ interface Props {
   vehicle?: Vehicle | null;
 }
 
-const empty: Omit<Vehicle, "id"> = {
+const DEFAULT_COVER_URL =
+  "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&w=800&q=70";
+
+// Champs texte du formulaire (sans image/photos, gérées séparément en fichiers).
+interface ScalarForm {
+  brand: string;
+  model: string;
+  year: number;
+  plate: string;
+  vin: string;
+  color: string;
+  transmission: Vehicle["transmission"];
+  fuel: FuelType;
+  mileage: number;
+  status: VehicleStatus;
+}
+
+const emptyScalar: ScalarForm = {
   brand: "",
   model: "",
   year: new Date().getFullYear(),
@@ -47,54 +54,75 @@ const empty: Omit<Vehicle, "id"> = {
   fuel: "essence",
   mileage: 0,
   status: "available",
-  image: "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&w=800&q=70",
-  photos: [],
 };
+
+// Une photo de la galerie est soit déjà sur le serveur (string = URL déjà résolue par
+// vehicleService.normalize), soit un nouveau fichier local pas encore uploadé.
+type GalleryPhoto = { kind: "existing"; url: string } | { kind: "new"; file: File; preview: string };
 
 export function VehicleFormDialog({ open, onOpenChange, vehicle }: Props) {
   const addVehicle = useFleetStore((s) => s.addVehicle);
   const updateVehicle = useFleetStore((s) => s.updateVehicle);
-  const [form, setForm] = useState<Omit<Vehicle, "id">>(empty);
+  const [form, setForm] = useState<ScalarForm>(emptyScalar);
   const [submitting, setSubmitting] = useState(false);
 
+  // Couverture : soit un nouveau fichier choisi, soit une URL (existante ou collée à la main).
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [coverPreview, setCoverPreview] = useState<string>(DEFAULT_COVER_URL);
+  const [coverUrlInput, setCoverUrlInput] = useState<string>(DEFAULT_COVER_URL);
+
+  const [gallery, setGallery] = useState<GalleryPhoto[]>([]);
+
   useEffect(() => {
-    if (open) {
-      if (vehicle) {
-        const { id: _id, ...rest } = vehicle;
-        setForm({ ...empty, ...rest, photos: rest.photos ?? [] });
-      } else setForm(empty);
+    if (!open) return;
+    if (vehicle) {
+      const { id: _id, image, photos, ...rest } = vehicle;
+      setForm({ ...emptyScalar, ...rest });
+      const initialImage = image || DEFAULT_COVER_URL;
+      setCoverFile(null);
+      setCoverPreview(initialImage);
+      setCoverUrlInput(initialImage);
+      setGallery((photos ?? []).map((url) => ({ kind: "existing", url })));
+    } else {
+      setForm(emptyScalar);
+      setCoverFile(null);
+      setCoverPreview(DEFAULT_COVER_URL);
+      setCoverUrlInput(DEFAULT_COVER_URL);
+      setGallery([]);
     }
   }, [open, vehicle]);
 
-  const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
+  const set = <K extends keyof ScalarForm>(k: K, v: ScalarForm[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
 
-  const handleCoverFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCoverFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = ""; // permet de resélectionner le même fichier ensuite
     if (!file) return;
-    try {
-      const dataUrl = await fileToDataUrl(file);
-      set("image", dataUrl);
-    } catch {
-      toast.error("Impossible de charger cette image");
-    }
+    setCoverFile(file);
+    setCoverPreview(URL.createObjectURL(file)); // aperçu local uniquement, jamais envoyé tel quel
   };
 
-  const handlePhotoFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCoverUrlChange = (value: string) => {
+    setCoverUrlInput(value);
+    setCoverFile(null); // une URL collée manuellement remplace un fichier déjà choisi
+    setCoverPreview(value || DEFAULT_COVER_URL);
+  };
+
+  const handlePhotoFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     e.target.value = "";
     if (!files.length) return;
-    try {
-      const dataUrls = await Promise.all(files.map(fileToDataUrl));
-      set("photos", [...(form.photos ?? []), ...dataUrls]);
-    } catch {
-      toast.error("Impossible de charger une ou plusieurs photos");
-    }
+    const added: GalleryPhoto[] = files.map((file) => ({
+      kind: "new",
+      file,
+      preview: URL.createObjectURL(file), // aperçu local uniquement
+    }));
+    setGallery((g) => [...g, ...added]);
   };
 
   const removePhoto = (index: number) =>
-    set("photos", (form.photos ?? []).filter((_, i) => i !== index));
+    setGallery((g) => g.filter((_, i) => i !== index));
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,11 +132,21 @@ export function VehicleFormDialog({ open, onOpenChange, vehicle }: Props) {
     }
     setSubmitting(true);
     try {
+      const input: VehicleInput = {
+        ...form,
+        coverFile: coverFile ?? undefined,
+        // Si aucun nouveau fichier n'est choisi, on envoie l'URL/le chemin actuel tel
+        // quel (existant conservé, ou URL externe collée à la main).
+        imageUrl: coverFile ? undefined : coverUrlInput,
+        newPhotos: gallery.filter((p): p is Extract<GalleryPhoto, { kind: "new" }> => p.kind === "new").map((p) => p.file),
+        keepPhotos: gallery.filter((p): p is Extract<GalleryPhoto, { kind: "existing" }> => p.kind === "existing").map((p) => p.url),
+      };
+
       if (vehicle) {
-        await updateVehicle(vehicle.id, form);
+        await updateVehicle(vehicle.id, input);
         toast.success("Véhicule mis à jour");
       } else {
-        await addVehicle(form);
+        await addVehicle(input);
         toast.success("Véhicule ajouté au parc");
       }
       onOpenChange(false);
@@ -171,7 +209,7 @@ export function VehicleFormDialog({ open, onOpenChange, vehicle }: Props) {
             <Field label="Image de couverture">
               <div className="flex items-center gap-3">
                 <VehicleImage
-                  src={form.image}
+                  src={coverPreview}
                   alt=""
                   className="h-16 w-24 shrink-0 rounded-md border border-border object-cover"
                   iconClassName="h-5 w-5"
@@ -183,8 +221,8 @@ export function VehicleFormDialog({ open, onOpenChange, vehicle }: Props) {
                 </label>
               </div>
               <Input
-                value={form.image ?? ""}
-                onChange={(e) => set("image", e.target.value)}
+                value={coverUrlInput}
+                onChange={(e) => handleCoverUrlChange(e.target.value)}
                 placeholder="ou collez une URL d'image..."
                 className="mt-2 text-xs"
               />
@@ -198,11 +236,15 @@ export function VehicleFormDialog({ open, onOpenChange, vehicle }: Props) {
                 <input type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoFiles} />
               </label>
             </Field>
-            {(form.photos ?? []).length > 0 && (
+            {gallery.length > 0 && (
               <div className="mt-2 flex gap-2 overflow-x-auto">
-                {(form.photos ?? []).map((p, i) => (
+                {gallery.map((p, i) => (
                   <div key={i} className="relative shrink-0">
-                    <VehicleImage src={p} alt="" className="h-16 w-24 rounded-md border border-border object-cover" />
+                    <VehicleImage
+                      src={p.kind === "existing" ? p.url : p.preview}
+                      alt=""
+                      className="h-16 w-24 rounded-md border border-border object-cover"
+                    />
                     <button
                       type="button"
                       onClick={() => removePhoto(i)}

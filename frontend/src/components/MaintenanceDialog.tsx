@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -13,8 +14,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { useFleetStore } from "@/lib/store";
-import type { Maintenance, Recurrence } from "@/lib/mock-data";
 import { recurrenceLabels } from "@/lib/mock-data";
+// Types alignés sur le backend (maintenanceService), plus sur le mock local :
+// une seule source de vérité pour "status"/"recurrence".
+import type { MaintenanceStatus, RecurrenceType } from "@/lib/maintenanceService";
 
 interface Props {
   open: boolean;
@@ -30,9 +33,10 @@ export function MaintenanceDialog({ open, onOpenChange, vehicleId }: Props) {
     type: "",
     scheduledDate: new Date().toISOString().slice(0, 10),
     garage: "",
-    status: "upcoming" as Maintenance["status"],
-    recurrence: "none" as Recurrence,
+    status: "upcoming" as MaintenanceStatus,
+    recurrence: "none" as RecurrenceType,
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -47,19 +51,34 @@ export function MaintenanceDialog({ open, onOpenChange, vehicleId }: Props) {
     }
   }, [open, vehicleId]);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.vehicleId || !form.type || !form.garage) {
       toast.error("Véhicule, type et garage sont requis.");
       return;
     }
-    addMaintenance(form);
-    toast.success("Maintenance planifiée");
-    onOpenChange(false);
+
+    setIsSubmitting(true);
+    try {
+      // addMaintenance est async : le backend génère lui-même les occurrences
+      // récurrentes et renvoie un tableau (1 élément si récurrence "none").
+      const created = await addMaintenance(form);
+      toast.success(
+        created.length > 1
+          ? `Maintenance planifiée — ${created.length} occurrences ajoutées`
+          : "Maintenance planifiée",
+      );
+      onOpenChange(false);
+    } catch (err: any) {
+      toast.error(err.message ?? "Erreur lors de la planification de la maintenance.");
+      // On laisse le dialog ouvert pour permettre de corriger et renvoyer.
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(o) => !isSubmitting && onOpenChange(o)}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Planifier une maintenance</DialogTitle>
@@ -88,7 +107,7 @@ export function MaintenanceDialog({ open, onOpenChange, vehicleId }: Props) {
             </div>
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs">Statut</Label>
-              <Select value={form.status} onValueChange={(v) => setForm((f) => ({ ...f, status: v as Maintenance["status"] }))}>
+              <Select value={form.status} onValueChange={(v) => setForm((f) => ({ ...f, status: v as MaintenanceStatus }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="upcoming">À venir</SelectItem>
@@ -104,10 +123,10 @@ export function MaintenanceDialog({ open, onOpenChange, vehicleId }: Props) {
           </div>
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs">Récurrence</Label>
-            <Select value={form.recurrence} onValueChange={(v) => setForm((f) => ({ ...f, recurrence: v as Recurrence }))}>
+            <Select value={form.recurrence} onValueChange={(v) => setForm((f) => ({ ...f, recurrence: v as RecurrenceType }))}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {(Object.keys(recurrenceLabels) as Recurrence[]).map((r) => (
+                {(Object.keys(recurrenceLabels) as RecurrenceType[]).map((r) => (
                   <SelectItem key={r} value={r}>{recurrenceLabels[r]}</SelectItem>
                 ))}
               </SelectContent>
@@ -117,8 +136,13 @@ export function MaintenanceDialog({ open, onOpenChange, vehicleId }: Props) {
             )}
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Annuler</Button>
-            <Button type="submit">Planifier</Button>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
+              Annuler
+            </Button>
+            <Button type="submit" disabled={isSubmitting} className="gap-2">
+              {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+              Planifier
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

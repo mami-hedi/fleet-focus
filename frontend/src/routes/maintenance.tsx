@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
-import { Plus, Calendar, Wrench, Euro, MapPin, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Plus, Calendar, Wrench, Euro, MapPin, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, AlertTriangle, Loader2 } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -26,10 +26,17 @@ const ITEMS_PER_PAGE = 10;
 
 function MaintenancePage() {
   const maintenances = useFleetStore((s) => s.maintenances);
+  const maintenancesLoading = useFleetStore((s) => s.maintenancesLoading);
+  const maintenancesError = useFleetStore((s) => s.maintenancesError);
+  const fetchMaintenances = useFleetStore((s) => s.fetchMaintenances);
   const vehicles = useFleetStore((s) => s.vehicles);
   const [filter, setFilter] = useState<Filter>("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+
+  useEffect(() => {
+    fetchMaintenances();
+  }, [fetchMaintenances]);
 
   const filtered = useMemo(
     () => (filter === "all" ? maintenances : maintenances.filter((m) => m.status === filter)),
@@ -68,6 +75,17 @@ function MaintenancePage() {
       }
     >
       <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 sm:px-6 lg:px-8">
+
+        {/* Erreur de chargement */}
+        {maintenancesError && (
+          <div className="flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span>{maintenancesError}</span>
+            <button onClick={() => fetchMaintenances()} className="ml-auto underline underline-offset-2">
+              Réessayer
+            </button>
+          </div>
+        )}
 
         {/* ═══════════════════ FILTRES ═══════════════════ */}
         {/* Desktop : tabs inline */}
@@ -110,100 +128,110 @@ function MaintenancePage() {
           ))}
         </div>
 
-        {/* ═══════════════════ TABLEAU DESKTOP ═══════════════════ */}
-        <div className="hidden sm:block overflow-hidden rounded-xl border border-border bg-card">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Véhicule</TableHead>
-                <TableHead>Type d'intervention</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Garage</TableHead>
-                <TableHead>Coût</TableHead>
-                <TableHead>Statut</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {paginated.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
-                    Aucune maintenance dans cette catégorie.
-                  </TableCell>
-                </TableRow>
-              )}
-              {paginated.map((m) => (
-                <MaintenanceRow key={m.id} maintenance={m} vehicles={vehicles} />
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-
-        {/* ═══════════════════ CARTES MOBILE ═══════════════════ */}
-        <div className="sm:hidden space-y-3">
-          {paginated.map((m) => (
-            <MaintenanceCard key={m.id} maintenance={m} vehicles={vehicles} />
-          ))}
-          {paginated.length === 0 && (
-            <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
-              Aucune maintenance dans cette catégorie.
-            </div>
-          )}
-        </div>
-
-        {/* ═══════════════════ PAGINATION ═══════════════════ */}
-        {totalPages > 1 && (
-          <div className="flex flex-col items-center gap-3 py-2">
-            <p className="text-xs text-muted-foreground">
-              Affichage {startIdx + 1}–{Math.min(startIdx + ITEMS_PER_PAGE, filtered.length)} sur {filtered.length}
-            </p>
-
-            {/* Desktop */}
-            <div className="hidden sm:flex items-center gap-1">
-              <PageBtn onClick={() => goToPage(1)} disabled={safePage === 1} icon={<ChevronsLeft className="h-4 w-4" />} />
-              <PageBtn onClick={() => goToPage(safePage - 1)} disabled={safePage === 1} icon={<ChevronLeft className="h-4 w-4" />} />
-
-              {getVisiblePages().map((p, i) =>
-                p === "..." ? (
-                  <span key={`dots-${i}`} className="px-2 text-sm text-muted-foreground">…</span>
-                ) : (
-                  <button
-                    key={p}
-                    onClick={() => goToPage(p as number)}
-                    className={cn(
-                      "h-8 w-8 rounded-lg text-sm font-medium transition-colors",
-                      safePage === p
-                        ? "bg-primary text-primary-foreground"
-                        : "border border-input bg-background text-foreground hover:bg-muted"
-                    )}
-                  >
-                    {p}
-                  </button>
-                )
-              )}
-
-              <PageBtn onClick={() => goToPage(safePage + 1)} disabled={safePage === totalPages} icon={<ChevronRight className="h-4 w-4" />} />
-              <PageBtn onClick={() => goToPage(totalPages)} disabled={safePage === totalPages} icon={<ChevronsRight className="h-4 w-4" />} />
-            </div>
-
-            {/* Mobile */}
-            <div className="flex sm:hidden items-center gap-3 w-full">
-              <button
-                onClick={() => goToPage(safePage - 1)}
-                disabled={safePage === 1}
-                className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-input bg-background px-3 py-2 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <ChevronLeft className="h-4 w-4" /> Précédent
-              </button>
-              <span className="text-sm font-medium">{safePage} / {totalPages}</span>
-              <button
-                onClick={() => goToPage(safePage + 1)}
-                disabled={safePage === totalPages}
-                className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-input bg-background px-3 py-2 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                Suivant <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
+        {/* ═══════════════════ ÉTAT DE CHARGEMENT ═══════════════════ */}
+        {maintenancesLoading && maintenances.length === 0 ? (
+          <div className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card p-12 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Chargement des maintenances…
           </div>
+        ) : (
+          <>
+            {/* ═══════════════════ TABLEAU DESKTOP ═══════════════════ */}
+            <div className="hidden sm:block overflow-hidden rounded-xl border border-border bg-card">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Véhicule</TableHead>
+                    <TableHead>Type d'intervention</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Garage</TableHead>
+                    <TableHead>Coût</TableHead>
+                    <TableHead>Statut</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {paginated.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
+                        Aucune maintenance dans cette catégorie.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {paginated.map((m) => (
+                    <MaintenanceRow key={m.id} maintenance={m} vehicles={vehicles} />
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* ═══════════════════ CARTES MOBILE ═══════════════════ */}
+            <div className="sm:hidden space-y-3">
+              {paginated.map((m) => (
+                <MaintenanceCard key={m.id} maintenance={m} vehicles={vehicles} />
+              ))}
+              {paginated.length === 0 && (
+                <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
+                  Aucune maintenance dans cette catégorie.
+                </div>
+              )}
+            </div>
+
+            {/* ═══════════════════ PAGINATION ═══════════════════ */}
+            {totalPages > 1 && (
+              <div className="flex flex-col items-center gap-3 py-2">
+                <p className="text-xs text-muted-foreground">
+                  Affichage {startIdx + 1}–{Math.min(startIdx + ITEMS_PER_PAGE, filtered.length)} sur {filtered.length}
+                </p>
+
+                {/* Desktop */}
+                <div className="hidden sm:flex items-center gap-1">
+                  <PageBtn onClick={() => goToPage(1)} disabled={safePage === 1} icon={<ChevronsLeft className="h-4 w-4" />} />
+                  <PageBtn onClick={() => goToPage(safePage - 1)} disabled={safePage === 1} icon={<ChevronLeft className="h-4 w-4" />} />
+
+                  {getVisiblePages().map((p, i) =>
+                    p === "..." ? (
+                      <span key={`dots-${i}`} className="px-2 text-sm text-muted-foreground">…</span>
+                    ) : (
+                      <button
+                        key={p}
+                        onClick={() => goToPage(p as number)}
+                        className={cn(
+                          "h-8 w-8 rounded-lg text-sm font-medium transition-colors",
+                          safePage === p
+                            ? "bg-primary text-primary-foreground"
+                            : "border border-input bg-background text-foreground hover:bg-muted"
+                        )}
+                      >
+                        {p}
+                      </button>
+                    )
+                  )}
+
+                  <PageBtn onClick={() => goToPage(safePage + 1)} disabled={safePage === totalPages} icon={<ChevronRight className="h-4 w-4" />} />
+                  <PageBtn onClick={() => goToPage(totalPages)} disabled={safePage === totalPages} icon={<ChevronsRight className="h-4 w-4" />} />
+                </div>
+
+                {/* Mobile */}
+                <div className="flex sm:hidden items-center gap-3 w-full">
+                  <button
+                    onClick={() => goToPage(safePage - 1)}
+                    disabled={safePage === 1}
+                    className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-input bg-background px-3 py-2 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <ChevronLeft className="h-4 w-4" /> Précédent
+                  </button>
+                  <span className="text-sm font-medium">{safePage} / {totalPages}</span>
+                  <button
+                    onClick={() => goToPage(safePage + 1)}
+                    disabled={safePage === totalPages}
+                    className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-input bg-background px-3 py-2 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Suivant <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 

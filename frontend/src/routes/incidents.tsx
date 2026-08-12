@@ -1,15 +1,39 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
-  Plus, Search, Calendar, MapPin, Car, User, FileText,
-  AlertTriangle, ShieldAlert, CheckCircle2, Clock, X,
-  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
-  Upload, Camera, Trash2, Pencil
+  Plus,
+  Search,
+  Calendar,
+  MapPin,
+  Car,
+  User,
+  FileText,
+  AlertTriangle,
+  ShieldAlert,
+  CheckCircle2,
+  Clock,
+  X,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Upload,
+  Camera,
+  Trash2,
+  Pencil,
 } from "lucide-react";
+import { toast } from "sonner";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,6 +45,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useFleetStore } from "@/lib/store";
+import { ApiRequestError } from "@/lib/api-client";
+import type { Vehicle } from "@/lib/mock-data";
+import type {
+  Incident,
+  IncidentSeverity,
+  IncidentStatus,
+  IncidentPayload,
+} from "@/lib/incidentService";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/incidents")({
@@ -28,73 +60,20 @@ export const Route = createFileRoute("/incidents")({
   component: IncidentsPage,
 });
 
-type IncidentSeverity = "minor" | "moderate" | "severe";
-type IncidentStatus = "open" | "in_progress" | "resolved";
-
-interface Incident {
-  id: string;
-  vehicleId: string;
-  driverId?: string;
-  date: string;
-  location: string;
-  description: string;
-  severity: IncidentSeverity;
-  status: IncidentStatus;
-  photos: string[];
-  cost?: number;
-  insuranceClaim?: boolean;
-  createdAt: string;
-}
-
 const ITEMS_PER_PAGE = 10;
-
-// ─── Mock data ───
-const initialIncidents: Incident[] = [
-  {
-    id: "i1",
-    vehicleId: "v1",
-    driverId: "d1",
-    date: "2026-07-10",
-    location: "Avenue Habib Bourguiba, Tunis",
-    description: "Accrochage latéral avec un scooter. Rayure sur la portière conducteur.",
-    severity: "minor",
-    status: "resolved",
-    photos: [],
-    cost: 450,
-    insuranceClaim: true,
-    createdAt: "2026-07-10T10:30:00",
-  },
-  {
-    id: "i2",
-    vehicleId: "v3",
-    driverId: "d2",
-    date: "2026-07-12",
-    location: "Autoroute A1, km 45",
-    description: "Panne moteur sur autoroute. Véhicule remorqué.",
-    severity: "severe",
-    status: "in_progress",
-    photos: [],
-    cost: 2800,
-    insuranceClaim: false,
-    createdAt: "2026-07-12T14:15:00",
-  },
-  {
-    id: "i3",
-    vehicleId: "v2",
-    date: "2026-07-14",
-    location: "Parking centre commercial",
-    description: "Coup de porte sur l'aile arrière droite.",
-    severity: "minor",
-    status: "open",
-    photos: [],
-    createdAt: "2026-07-14T09:00:00",
-  },
-];
 
 const severityConfig = {
   minor: { label: "Léger", cls: "bg-info/10 text-info border-info/30", icon: AlertTriangle },
-  moderate: { label: "Modéré", cls: "bg-warning/15 text-warning-foreground border-warning/30", icon: Clock },
-  severe: { label: "Grave", cls: "bg-destructive/10 text-destructive border-destructive/30", icon: ShieldAlert },
+  moderate: {
+    label: "Modéré",
+    cls: "bg-warning/15 text-warning-foreground border-warning/30",
+    icon: Clock,
+  },
+  severe: {
+    label: "Grave",
+    cls: "bg-destructive/10 text-destructive border-destructive/30",
+    icon: ShieldAlert,
+  },
 };
 
 const statusConfig = {
@@ -104,7 +83,13 @@ const statusConfig = {
 };
 
 function IncidentsPage() {
-  const [incidents, setIncidents] = useState<Incident[]>(initialIncidents);
+  const incidents = useFleetStore((s) => s.incidents);
+  const incidentsLoaded = useFleetStore((s) => s.incidentsLoaded);
+  const incidentsLoading = useFleetStore((s) => s.incidentsLoading);
+  const incidentsError = useFleetStore((s) => s.incidentsError);
+  const fetchIncidents = useFleetStore((s) => s.fetchIncidents);
+  const deleteIncident = useFleetStore((s) => s.deleteIncident);
+
   const [query, setQuery] = useState("");
   const [severityFilter, setSeverityFilter] = useState<IncidentSeverity | "all">("all");
   const [statusFilter, setStatusFilter] = useState<IncidentStatus | "all">("all");
@@ -112,8 +97,20 @@ function IncidentsPage() {
   const [editing, setEditing] = useState<Incident | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Incident | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [deleting, setDeleting] = useState(false);
 
   const vehicles = useFleetStore((s) => s.vehicles);
+  const vehiclesLoaded = useFleetStore((s) => s.vehiclesLoaded);
+  const fetchVehicles = useFleetStore((s) => s.fetchVehicles);
+
+  useEffect(() => {
+    if (!incidentsLoaded) fetchIncidents();
+    // La page /incidents peut être ouverte directement (sans passer par
+    // /vehicles) : on charge aussi la liste des véhicules pour que le menu
+    // déroulant du formulaire "Déclarer un incident" ne soit pas vide.
+    if (!vehiclesLoaded) fetchVehicles();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ─── Filtrage ───
   const filtered = incidents.filter((inc) => {
@@ -150,25 +147,18 @@ function IncidentsPage() {
   };
 
   // ─── Actions ───
-  const handleSave = (incident: Omit<Incident, "id" | "createdAt">, id?: string) => {
-    if (id) {
-      setIncidents((prev) =>
-        prev.map((i) => (i.id === id ? { ...incident, id, createdAt: i.createdAt } : i))
-      );
-    } else {
-      setIncidents((prev) => [
-        { ...incident, id: `i${Date.now()}`, createdAt: new Date().toISOString() },
-        ...prev,
-      ]);
-    }
-    setDialogOpen(false);
-    setEditing(null);
-  };
-
-  const handleDelete = () => {
-    if (deleteTarget) {
-      setIncidents((prev) => prev.filter((i) => i.id !== deleteTarget.id));
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await deleteIncident(deleteTarget.id);
+      toast.success("Incident supprimé");
       setDeleteTarget(null);
+    } catch (err) {
+      const message = err instanceof ApiRequestError ? err.detail : (err as Error).message;
+      toast.error(message || "Erreur lors de la suppression de l'incident");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -180,7 +170,14 @@ function IncidentsPage() {
     <AppLayout
       title="Incidents"
       actions={
-        <Button size="sm" className="gap-1.5" onClick={() => { setEditing(null); setDialogOpen(true); }}>
+        <Button
+          size="sm"
+          className="gap-1.5"
+          onClick={() => {
+            setEditing(null);
+            setDialogOpen(true);
+          }}
+        >
           <Plus className="h-4 w-4" />
           <span className="hidden sm:inline">Déclarer un incident</span>
           <span className="sm:hidden">Déclarer</span>
@@ -188,12 +185,26 @@ function IncidentsPage() {
       }
     >
       <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 sm:px-6 lg:px-8">
-
         {/* ─── Cartes stats ─── */}
         <div className="grid grid-cols-3 gap-3">
-          <SummaryCard label="Ouverts" value={openCount} tint="bg-destructive/10 text-destructive" icon={AlertTriangle} />
-          <SummaryCard label="En cours" value={inProgressCount} tint="bg-warning/15 text-warning-foreground" icon={Clock} />
-          <SummaryCard label="Coût total" value={`${totalCost.toLocaleString("fr-FR")} €`} tint="bg-muted text-foreground" icon={FileText} />
+          <SummaryCard
+            label="Ouverts"
+            value={openCount}
+            tint="bg-destructive/10 text-destructive"
+            icon={AlertTriangle}
+          />
+          <SummaryCard
+            label="En cours"
+            value={inProgressCount}
+            tint="bg-warning/15 text-warning-foreground"
+            icon={Clock}
+          />
+          <SummaryCard
+            label="Coût total"
+            value={`${totalCost.toLocaleString("fr-FR")} €`}
+            tint="bg-muted text-foreground"
+            icon={FileText}
+          />
         </div>
 
         {/* ─── Filtres ─── */}
@@ -202,7 +213,10 @@ function IncidentsPage() {
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={query}
-              onChange={(e) => { setQuery(e.target.value); setCurrentPage(1); }}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setCurrentPage(1);
+              }}
               placeholder="Rechercher un incident..."
               className="pl-9"
             />
@@ -210,7 +224,10 @@ function IncidentsPage() {
           <div className="flex flex-wrap gap-2">
             <select
               value={severityFilter}
-              onChange={(e) => { setSeverityFilter(e.target.value as IncidentSeverity | "all"); setCurrentPage(1); }}
+              onChange={(e) => {
+                setSeverityFilter(e.target.value as IncidentSeverity | "all");
+                setCurrentPage(1);
+              }}
               className="h-9 rounded-lg border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             >
               <option value="all">Toutes gravités</option>
@@ -220,7 +237,10 @@ function IncidentsPage() {
             </select>
             <select
               value={statusFilter}
-              onChange={(e) => { setStatusFilter(e.target.value as IncidentStatus | "all"); setCurrentPage(1); }}
+              onChange={(e) => {
+                setStatusFilter(e.target.value as IncidentStatus | "all");
+                setCurrentPage(1);
+              }}
               className="h-9 rounded-lg border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             >
               <option value="all">Tous statuts</option>
@@ -230,6 +250,16 @@ function IncidentsPage() {
             </select>
           </div>
         </div>
+
+        {incidentsError && (
+          <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+            {incidentsError}
+          </div>
+        )}
+
+        {incidentsLoading && incidents.length === 0 && (
+          <p className="text-sm text-muted-foreground">Chargement des incidents...</p>
+        )}
 
         {/* ─── Tableau Desktop ─── */}
         <div className="hidden sm:block overflow-hidden rounded-xl border border-border bg-card">
@@ -256,10 +286,16 @@ function IncidentsPage() {
                   <TableRow key={inc.id}>
                     <TableCell>
                       {v && (
-                        <Link to="/vehicles/$id" params={{ id: v.id }} className="flex items-center gap-3">
+                        <Link
+                          to="/vehicles/$id"
+                          params={{ id: v.id }}
+                          className="flex items-center gap-3"
+                        >
                           <img src={v.image} alt="" className="h-9 w-14 rounded object-cover" />
                           <div>
-                            <p className="text-sm font-medium">{v.brand} {v.model}</p>
+                            <p className="text-sm font-medium">
+                              {v.brand} {v.model}
+                            </p>
                             <p className="font-mono text-xs text-muted-foreground">{v.plate}</p>
                           </div>
                         </Link>
@@ -278,13 +314,20 @@ function IncidentsPage() {
                       </span>
                     </TableCell>
                     <TableCell>
-                      <span className={cn("inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium", sev.cls)}>
+                      <span
+                        className={cn(
+                          "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium",
+                          sev.cls,
+                        )}
+                      >
                         <SevIcon className="h-3 w-3" />
                         {sev.label}
                       </span>
                     </TableCell>
                     <TableCell>
-                      <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-medium", st.cls)}>
+                      <span
+                        className={cn("rounded-full px-2.5 py-0.5 text-xs font-medium", st.cls)}
+                      >
                         {st.label}
                       </span>
                     </TableCell>
@@ -293,10 +336,23 @@ function IncidentsPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-1">
-                        <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { setEditing(inc); setDialogOpen(true); }}>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8"
+                          onClick={() => {
+                            setEditing(inc);
+                            setDialogOpen(true);
+                          }}
+                        >
                           <FileText className="h-3.5 w-3.5" />
                         </Button>
-                        <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteTarget(inc)}>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          onClick={() => setDeleteTarget(inc)}
+                        >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
@@ -327,15 +383,26 @@ function IncidentsPage() {
               <div key={inc.id} className="rounded-xl border border-border bg-card p-4 space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   {v && (
-                    <Link to="/vehicles/$id" params={{ id: v.id }} className="flex items-center gap-3">
+                    <Link
+                      to="/vehicles/$id"
+                      params={{ id: v.id }}
+                      className="flex items-center gap-3"
+                    >
                       <img src={v.image} alt="" className="h-10 w-16 rounded object-cover" />
                       <div>
-                        <p className="text-sm font-medium">{v.brand} {v.model}</p>
+                        <p className="text-sm font-medium">
+                          {v.brand} {v.model}
+                        </p>
                         <p className="font-mono text-xs text-muted-foreground">{v.plate}</p>
                       </div>
                     </Link>
                   )}
-                  <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium", sev.cls)}>
+                  <span
+                    className={cn(
+                      "shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium",
+                      sev.cls,
+                    )}
+                  >
                     <SevIcon className="h-3 w-3 inline mr-0.5" />
                     {sev.label}
                   </span>
@@ -351,7 +418,9 @@ function IncidentsPage() {
                   </div>
                   <div>
                     <p className="text-[10px] uppercase text-muted-foreground">Statut</p>
-                    <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", st.cls)}>
+                    <span
+                      className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", st.cls)}
+                    >
                       {st.label}
                     </span>
                   </div>
@@ -381,10 +450,23 @@ function IncidentsPage() {
                 </div>
 
                 <div className="flex gap-2 pt-1">
-                  <Button size="sm" variant="outline" className="flex-1 gap-1" onClick={() => { setEditing(inc); setDialogOpen(true); }}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1 gap-1"
+                    onClick={() => {
+                      setEditing(inc);
+                      setDialogOpen(true);
+                    }}
+                  >
                     <FileText className="h-3 w-3" /> Détails
                   </Button>
-                  <Button size="sm" variant="destructive" className="flex-1 gap-1" onClick={() => setDeleteTarget(inc)}>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    className="flex-1 gap-1"
+                    onClick={() => setDeleteTarget(inc)}
+                  >
                     <Trash2 className="h-3 w-3" /> Supprimer
                   </Button>
                 </div>
@@ -402,31 +484,52 @@ function IncidentsPage() {
         {totalPages > 1 && (
           <div className="flex flex-col items-center gap-3 py-2">
             <p className="text-xs text-muted-foreground">
-              Affichage {startIdx + 1}–{Math.min(startIdx + ITEMS_PER_PAGE, filtered.length)} sur {filtered.length}
+              Affichage {startIdx + 1}–{Math.min(startIdx + ITEMS_PER_PAGE, filtered.length)} sur{" "}
+              {filtered.length}
             </p>
 
             {/* Desktop */}
             <div className="hidden sm:flex items-center gap-1">
-              <PageBtn onClick={() => goToPage(1)} disabled={safePage === 1} icon={<ChevronsLeft className="h-4 w-4" />} />
-              <PageBtn onClick={() => goToPage(safePage - 1)} disabled={safePage === 1} icon={<ChevronLeft className="h-4 w-4" />} />
+              <PageBtn
+                onClick={() => goToPage(1)}
+                disabled={safePage === 1}
+                icon={<ChevronsLeft className="h-4 w-4" />}
+              />
+              <PageBtn
+                onClick={() => goToPage(safePage - 1)}
+                disabled={safePage === 1}
+                icon={<ChevronLeft className="h-4 w-4" />}
+              />
               {getVisiblePages().map((p, i) =>
                 p === "..." ? (
-                  <span key={`dots-${i}`} className="px-2 text-sm text-muted-foreground">…</span>
+                  <span key={`dots-${i}`} className="px-2 text-sm text-muted-foreground">
+                    …
+                  </span>
                 ) : (
                   <button
                     key={p}
                     onClick={() => goToPage(p as number)}
                     className={cn(
                       "h-8 w-8 rounded-lg text-sm font-medium transition-colors",
-                      safePage === p ? "bg-primary text-primary-foreground" : "border border-input bg-background text-foreground hover:bg-muted"
+                      safePage === p
+                        ? "bg-primary text-primary-foreground"
+                        : "border border-input bg-background text-foreground hover:bg-muted",
                     )}
                   >
                     {p}
                   </button>
-                )
+                ),
               )}
-              <PageBtn onClick={() => goToPage(safePage + 1)} disabled={safePage === totalPages} icon={<ChevronRight className="h-4 w-4" />} />
-              <PageBtn onClick={() => goToPage(totalPages)} disabled={safePage === totalPages} icon={<ChevronsRight className="h-4 w-4" />} />
+              <PageBtn
+                onClick={() => goToPage(safePage + 1)}
+                disabled={safePage === totalPages}
+                icon={<ChevronRight className="h-4 w-4" />}
+              />
+              <PageBtn
+                onClick={() => goToPage(totalPages)}
+                disabled={safePage === totalPages}
+                icon={<ChevronsRight className="h-4 w-4" />}
+              />
             </div>
 
             {/* Mobile */}
@@ -438,7 +541,9 @@ function IncidentsPage() {
               >
                 <ChevronLeft className="h-4 w-4" /> Précédent
               </button>
-              <span className="text-sm font-medium">{safePage} / {totalPages}</span>
+              <span className="text-sm font-medium">
+                {safePage} / {totalPages}
+              </span>
               <button
                 onClick={() => goToPage(safePage + 1)}
                 disabled={safePage === totalPages}
@@ -456,8 +561,10 @@ function IncidentsPage() {
         <IncidentDialog
           incident={editing}
           vehicles={vehicles}
-          onClose={() => { setDialogOpen(false); setEditing(null); }}
-          onSave={handleSave}
+          onClose={() => {
+            setDialogOpen(false);
+            setEditing(null);
+          }}
         />
       )}
 
@@ -467,13 +574,18 @@ function IncidentsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Supprimer cet incident ?</AlertDialogTitle>
             <AlertDialogDescription>
-              {deleteTarget && `Cet incident du ${new Date(deleteTarget.date).toLocaleDateString("fr-FR")} sera définitivement supprimé.`}
+              {deleteTarget &&
+                `Cet incident du ${new Date(deleteTarget.date).toLocaleDateString("fr-FR")} sera définitivement supprimé.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Annuler</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              Supprimer
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? "Suppression..." : "Supprimer"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -486,7 +598,17 @@ function IncidentsPage() {
    SOUS-COMPOSANTS
    ═══════════════════════════════════════════════════════════════ */
 
-function SummaryCard({ label, value, tint, icon: Icon }: { label: string; value: string | number; tint: string; icon: React.ElementType }) {
+function SummaryCard({
+  label,
+  value,
+  tint,
+  icon: Icon,
+}: {
+  label: string;
+  value: string | number;
+  tint: string;
+  icon: React.ElementType;
+}) {
   return (
     <div className="rounded-xl border border-border bg-card p-3 sm:p-5">
       <p className="text-[10px] sm:text-xs text-muted-foreground">{label}</p>
@@ -500,7 +622,15 @@ function SummaryCard({ label, value, tint, icon: Icon }: { label: string; value:
   );
 }
 
-function PageBtn({ onClick, disabled, icon }: { onClick: () => void; disabled: boolean; icon: React.ReactNode }) {
+function PageBtn({
+  onClick,
+  disabled,
+  icon,
+}: {
+  onClick: () => void;
+  disabled: boolean;
+  icon: React.ReactNode;
+}) {
   return (
     <button
       onClick={onClick}
@@ -516,13 +646,14 @@ function IncidentDialog({
   incident,
   vehicles,
   onClose,
-  onSave,
 }: {
   incident: Incident | null;
-  vehicles: any[];
+  vehicles: Vehicle[];
   onClose: () => void;
-  onSave: (i: Omit<Incident, "id" | "createdAt">, id?: string) => void;
 }) {
+  const addIncident = useFleetStore((s) => s.addIncident);
+  const updateIncident = useFleetStore((s) => s.updateIncident);
+
   const [vehicleId, setVehicleId] = useState(incident?.vehicleId ?? "");
   const [date, setDate] = useState(incident?.date ?? new Date().toISOString().split("T")[0]);
   const [location, setLocation] = useState(incident?.location ?? "");
@@ -533,6 +664,7 @@ function IncidentDialog({
   const [insuranceClaim, setInsuranceClaim] = useState(incident?.insuranceClaim ?? false);
   const [photos, setPhotos] = useState<string[]>(incident?.photos ?? []);
   const [isDragging, setIsDragging] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const handleFile = (file: File) => {
     if (file.type.startsWith("image/")) {
@@ -542,31 +674,54 @@ function IncidentDialog({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!vehicleId || !date || !location || !description) return;
-    onSave(
-      {
-        vehicleId,
-        date,
-        location,
-        description,
-        severity,
-        status,
-        cost: cost ? parseFloat(cost) : undefined,
-        insuranceClaim,
-        photos,
-      },
-      incident?.id
-    );
+    if (!vehicleId || !date || !location || !description) {
+      toast.error("Véhicule, date, lieu et description sont requis.");
+      return;
+    }
+
+    const payload: IncidentPayload = {
+      vehicleId,
+      date,
+      location,
+      description,
+      severity,
+      status,
+      cost: cost ? parseFloat(cost) : undefined,
+      insuranceClaim,
+      photos,
+    };
+
+    setSubmitting(true);
+    try {
+      if (incident) {
+        await updateIncident(incident.id, payload);
+        toast.success("Incident mis à jour");
+      } else {
+        await addIncident(payload);
+        toast.success("Incident déclaré");
+      }
+      onClose();
+    } catch (err) {
+      const message = err instanceof ApiRequestError ? err.detail : (err as Error).message;
+      toast.error(message || "Erreur lors de l'enregistrement de l'incident");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4">
       <div className="w-full max-w-lg rounded-t-2xl sm:rounded-2xl border border-border bg-card p-4 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-semibold">{incident ? "Modifier l'incident" : "Déclarer un incident"}</h2>
-          <button onClick={onClose} className="rounded-lg p-2 text-muted-foreground hover:bg-muted transition-colors">
+          <h2 className="text-lg font-semibold">
+            {incident ? "Modifier l'incident" : "Déclarer un incident"}
+          </h2>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-2 text-muted-foreground hover:bg-muted transition-colors"
+          >
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -583,7 +738,9 @@ function IncidentDialog({
             >
               <option value="">Sélectionner un véhicule</option>
               {vehicles.map((v) => (
-                <option key={v.id} value={v.id}>{v.brand} {v.model} — {v.plate}</option>
+                <option key={v.id} value={v.id}>
+                  {v.brand} {v.model} — {v.plate}
+                </option>
               ))}
             </select>
           </div>
@@ -592,11 +749,23 @@ function IncidentDialog({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium mb-1.5">Date *</label>
-              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                required
+                className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1.5">Lieu *</label>
-              <input value={location} onChange={(e) => setLocation(e.target.value)} required placeholder="Ex: Avenue Habib Bourguiba" className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              <input
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                required
+                placeholder="Ex: Avenue Habib Bourguiba"
+                className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
             </div>
           </div>
 
@@ -627,7 +796,9 @@ function IncidentDialog({
                       onClick={() => setSeverity(s)}
                       className={cn(
                         "flex-1 rounded-md px-2 py-1.5 text-[10px] font-medium transition-colors",
-                        severity === s ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+                        severity === s
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground",
                       )}
                     >
                       {cfg.label}
@@ -648,7 +819,9 @@ function IncidentDialog({
                       onClick={() => setStatus(s)}
                       className={cn(
                         "flex-1 rounded-md px-2 py-1.5 text-[10px] font-medium transition-colors",
-                        status === s ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+                        status === s
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground",
                       )}
                     >
                       {cfg.label}
@@ -663,7 +836,13 @@ function IncidentDialog({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium mb-1.5">Coût estimé (€)</label>
-              <input type="number" value={cost} onChange={(e) => setCost(e.target.value)} placeholder="0" className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              <input
+                type="number"
+                value={cost}
+                onChange={(e) => setCost(e.target.value)}
+                placeholder="0"
+                className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
             </div>
             <div className="flex items-end">
               <button
@@ -673,10 +852,14 @@ function IncidentDialog({
                   "w-full flex items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors",
                   insuranceClaim
                     ? "border-success bg-success/10 text-success"
-                    : "border-input bg-background text-muted-foreground"
+                    : "border-input bg-background text-muted-foreground",
                 )}
               >
-                {insuranceClaim ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                {insuranceClaim ? (
+                  <CheckCircle2 className="h-4 w-4" />
+                ) : (
+                  <AlertTriangle className="h-4 w-4" />
+                )}
                 {insuranceClaim ? "Déclaré assurance" : "Déclarer assurance"}
               </button>
             </div>
@@ -686,15 +869,32 @@ function IncidentDialog({
           <div>
             <label className="block text-sm font-medium mb-1.5">Photos</label>
             <div
-              onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragging(true);
+              }}
               onDragLeave={() => setIsDragging(false)}
-              onDrop={(e) => { e.preventDefault(); setIsDragging(false); Array.from(e.dataTransfer.files).forEach(handleFile); }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragging(false);
+                Array.from(e.dataTransfer.files).forEach(handleFile);
+              }}
               className={cn(
                 "relative rounded-xl border-2 border-dashed p-4 text-center transition-colors",
-                isDragging ? "border-primary bg-primary/5" : photos.length > 0 ? "border-success bg-success/5" : "border-muted-foreground/25 hover:border-muted-foreground/50"
+                isDragging
+                  ? "border-primary bg-primary/5"
+                  : photos.length > 0
+                    ? "border-success bg-success/5"
+                    : "border-muted-foreground/25 hover:border-muted-foreground/50",
               )}
             >
-              <input type="file" accept="image/*" multiple onChange={(e) => Array.from(e.target.files ?? []).forEach(handleFile)} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={(e) => Array.from(e.target.files ?? []).forEach(handleFile)}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              />
               {photos.length > 0 ? (
                 <div className="space-y-2">
                   <div className="flex gap-2 flex-wrap justify-center">
@@ -703,7 +903,10 @@ function IncidentDialog({
                         <img src={p} alt="" className="h-16 w-16 rounded-lg object-cover" />
                         <button
                           type="button"
-                          onClick={(e) => { e.stopPropagation(); setPhotos((prev) => prev.filter((_, idx) => idx !== i)); }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPhotos((prev) => prev.filter((_, idx) => idx !== i));
+                          }}
                           className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center"
                         >
                           <X className="h-2.5 w-2.5" />
@@ -711,11 +914,15 @@ function IncidentDialog({
                       </div>
                     ))}
                   </div>
-                  <p className="text-xs text-muted-foreground">Cliquer pour ajouter d'autres photos</p>
+                  <p className="text-xs text-muted-foreground">
+                    Cliquer pour ajouter d'autres photos
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-1">
-                  <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-muted"><Camera className="h-4 w-4 text-muted-foreground" /></div>
+                  <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+                    <Camera className="h-4 w-4 text-muted-foreground" />
+                  </div>
                   <p className="text-xs text-muted-foreground">Cliquer ou glisser des photos</p>
                 </div>
               )}
@@ -724,8 +931,21 @@ function IncidentDialog({
 
           {/* Boutons */}
           <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} className="rounded-lg border border-input bg-background px-4 py-2.5 text-sm font-medium transition-colors hover:bg-muted">Annuler</button>
-            <button type="submit" className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90">{incident ? "Enregistrer" : "Déclarer"}</button>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={submitting}
+              className="rounded-lg border border-input bg-background px-4 py-2.5 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-50"
+            >
+              Annuler
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
+            >
+              {submitting ? "Enregistrement..." : incident ? "Enregistrer" : "Déclarer"}
+            </button>
           </div>
         </form>
       </div>

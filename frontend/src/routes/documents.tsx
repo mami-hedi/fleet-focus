@@ -1,14 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   AlertTriangle, Plus, X, Upload, Filter, Calendar, FileText, ShieldCheck,
-  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Loader2,
+  MoreVertical, Pencil, Trash2
 } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { docTypeLabels, daysUntil } from "@/lib/mock-data";
 import { useFleetStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import type { DocumentDTO, DocumentInput } from "@/lib/documentService";
 
 export const Route = createFileRoute("/documents")({
   head: () => ({ meta: [{ title: "Documents & conformité — FleetOps" }] }),
@@ -32,10 +34,35 @@ const MONTHS = [
 
 const ITEMS_PER_PAGE = 10;
 
+// Base publique de l'API, utilisée pour préfixer les fileUrl relatifs renvoyés par le backend.
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4000/api";
+const FILE_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, "");
+
+// Défensif : d'anciens documents créés avant le fix upload (multer) peuvent avoir un
+// base64 brut stocké dans fileUrl au lieu d'un chemin relatif — souvent tronqué par la
+// colonne STRING (VARCHAR 255), ce qui casse l'URL. On n'affiche le lien que si fileUrl
+// ressemble à un chemin/URL valide ; sinon on masque silencieusement plutôt que de générer
+// un lien cassé.
+function resolveFileUrl(fileUrl: string | null): string | null {
+  if (!fileUrl) return null;
+  if (fileUrl.startsWith("http://") || fileUrl.startsWith("https://")) return fileUrl;
+  if (fileUrl.startsWith("data:")) return null; // legacy corrompu, probablement tronqué
+  return `${FILE_ORIGIN}${fileUrl}`;
+}
+
 function DocumentsPage() {
   const documents = useFleetStore((s) => s.documents);
-  const vehicles = useFleetStore((s) => s.vehicles);
+  const documentsLoading = useFleetStore((s) => s.documentsLoading);
+  const documentsError = useFleetStore((s) => s.documentsError);
+  const fetchDocuments = useFleetStore((s) => s.fetchDocuments);
   const addDocument = useFleetStore((s) => s.addDocument);
+  const editDocument = useFleetStore((s) => s.editDocument);
+  const removeDocument = useFleetStore((s) => s.removeDocument);
+  const vehicles = useFleetStore((s) => s.vehicles);
+
+  useEffect(() => {
+    fetchDocuments();
+  }, [fetchDocuments]);
 
   // ─── Filtres ───
   const [filterType, setFilterType] = useState<string>("");
@@ -48,7 +75,10 @@ function DocumentsPage() {
   // ─── Pagination ───
   const [currentPage, setCurrentPage] = useState(1);
 
-  const [isOpen, setIsOpen] = useState(false);
+  // ─── Modals ───
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [editingDoc, setEditingDoc] = useState<DocumentDTO | null>(null);
+  const [deletingDoc, setDeletingDoc] = useState<DocumentDTO | null>(null);
 
   // ─── Documents triés et filtrés ───
   const sorted = [...documents].sort((a, b) => a.expiryDate.localeCompare(b.expiryDate));
@@ -76,7 +106,6 @@ function DocumentsPage() {
   const startIdx = (safePage - 1) * ITEMS_PER_PAGE;
   const paginated = filtered.slice(startIdx, startIdx + ITEMS_PER_PAGE);
 
-  // Reset page quand filtres changent
   const applyFilter = (setter: (v: string) => void) => (value: string) => {
     setter(value);
     setCurrentPage(1);
@@ -95,15 +124,19 @@ function DocumentsPage() {
     setCurrentPage(1);
   };
 
-  // ─── Pagination helpers ───
   const goToPage = (p: number) => setCurrentPage(Math.max(1, Math.min(p, totalPages)));
   const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);
-  // Show max 5 page numbers with ellipsis
   const getVisiblePages = () => {
     if (totalPages <= 5) return pageNumbers;
     if (safePage <= 3) return [...pageNumbers.slice(0, 5), "...", totalPages];
     if (safePage >= totalPages - 2) return [1, "...", ...pageNumbers.slice(totalPages - 5)];
     return [1, "...", safePage - 1, safePage, safePage + 1, "...", totalPages];
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deletingDoc) return;
+    await removeDocument(deletingDoc.id);
+    setDeletingDoc(null);
   };
 
   return (
@@ -118,7 +151,7 @@ function DocumentsPage() {
             <Card label="Expirés" value={expired} tint="bg-destructive/10 text-destructive" />
           </div>
           <button
-            onClick={() => setIsOpen(true)}
+            onClick={() => setIsAddOpen(true)}
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 sm:w-auto w-full"
           >
             <Plus className="h-4 w-4" />
@@ -127,8 +160,18 @@ function DocumentsPage() {
           </button>
         </div>
 
+        {/* Erreur de chargement */}
+        {documentsError && (
+          <div className="flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span>{documentsError}</span>
+            <button onClick={() => fetchDocuments()} className="ml-auto underline underline-offset-2">
+              Réessayer
+            </button>
+          </div>
+        )}
+
         {/* ═══════════════════ BARRE DE FILTRES ═══════════════════ */}
-        {/* Desktop : inline */}
         <div className="hidden sm:flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-4">
           <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
             <Filter className="h-4 w-4" />
@@ -157,7 +200,6 @@ function DocumentsPage() {
           )}
         </div>
 
-        {/* Mobile : toggle + drawer */}
         <div className="sm:hidden">
           <button
             onClick={() => setShowFiltersMobile(!showFiltersMobile)}
@@ -197,101 +239,149 @@ function DocumentsPage() {
           )}
         </div>
 
-        {/* ═══════════════════ TABLEAU DESKTOP ═══════════════════ */}
-        <div className="hidden sm:block overflow-hidden rounded-xl border border-border bg-card">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Véhicule</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Numéro</TableHead>
-                <TableHead>Expiration</TableHead>
-                <TableHead>Statut</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {paginated.map((d) => <DocRow key={d.id} doc={d} vehicles={vehicles} />)}
-              {paginated.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={5} className="py-12 text-center text-sm text-muted-foreground">
-                    Aucun document ne correspond aux filtres sélectionnés.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
-
-        {/* ═══════════════════ CARTES MOBILE ═══════════════════ */}
-        <div className="sm:hidden space-y-3">
-          {paginated.map((d) => <DocCard key={d.id} doc={d} vehicles={vehicles} />)}
-          {paginated.length === 0 && (
-            <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
-              Aucun document ne correspond aux filtres sélectionnés.
-            </div>
-          )}
-        </div>
-
-        {/* ═══════════════════ PAGINATION ═══════════════════ */}
-        {totalPages > 1 && (
-          <div className="flex flex-col items-center gap-3 py-2">
-            {/* Info */}
-            <p className="text-xs text-muted-foreground">
-              Affichage {startIdx + 1}–{Math.min(startIdx + ITEMS_PER_PAGE, filtered.length)} sur {filtered.length}
-            </p>
-
-            {/* Desktop pagination */}
-            <div className="hidden sm:flex items-center gap-1">
-              <PageBtn onClick={() => goToPage(1)} disabled={safePage === 1} icon={<ChevronsLeft className="h-4 w-4" />} />
-              <PageBtn onClick={() => goToPage(safePage - 1)} disabled={safePage === 1} icon={<ChevronLeft className="h-4 w-4" />} />
-
-              {getVisiblePages().map((p, i) =>
-                p === "..." ? (
-                  <span key={`dots-${i}`} className="px-2 text-sm text-muted-foreground">…</span>
-                ) : (
-                  <button
-                    key={p}
-                    onClick={() => goToPage(p as number)}
-                    className={cn(
-                      "h-8 w-8 rounded-lg text-sm font-medium transition-colors",
-                      safePage === p
-                        ? "bg-primary text-primary-foreground"
-                        : "border border-input bg-background text-foreground hover:bg-muted"
-                    )}
-                  >
-                    {p}
-                  </button>
-                )
-              )}
-
-              <PageBtn onClick={() => goToPage(safePage + 1)} disabled={safePage === totalPages} icon={<ChevronRight className="h-4 w-4" />} />
-              <PageBtn onClick={() => goToPage(totalPages)} disabled={safePage === totalPages} icon={<ChevronsRight className="h-4 w-4" />} />
-            </div>
-
-            {/* Mobile pagination : simple prev/next */}
-            <div className="flex sm:hidden items-center gap-3 w-full">
-              <button
-                onClick={() => goToPage(safePage - 1)}
-                disabled={safePage === 1}
-                className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-input bg-background px-3 py-2 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <ChevronLeft className="h-4 w-4" /> Précédent
-              </button>
-              <span className="text-sm font-medium">{safePage} / {totalPages}</span>
-              <button
-                onClick={() => goToPage(safePage + 1)}
-                disabled={safePage === totalPages}
-                className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-input bg-background px-3 py-2 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                Suivant <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
+        {/* ═══════════════════ ÉTAT DE CHARGEMENT ═══════════════════ */}
+        {documentsLoading && documents.length === 0 ? (
+          <div className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card p-12 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Chargement des documents…
           </div>
+        ) : (
+          <>
+            {/* ═══════════════════ TABLEAU DESKTOP ═══════════════════ */}
+            <div className="hidden sm:block overflow-hidden rounded-xl border border-border bg-card">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Véhicule</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Numéro</TableHead>
+                    <TableHead>Expiration</TableHead>
+                    <TableHead>Statut</TableHead>
+                    <TableHead className="w-10" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {paginated.map((d) => (
+                    <DocRow
+                      key={d.id}
+                      doc={d}
+                      vehicles={vehicles}
+                      onEdit={() => setEditingDoc(d)}
+                      onDelete={() => setDeletingDoc(d)}
+                    />
+                  ))}
+                  {paginated.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="py-12 text-center text-sm text-muted-foreground">
+                        Aucun document ne correspond aux filtres sélectionnés.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* ═══════════════════ CARTES MOBILE ═══════════════════ */}
+            <div className="sm:hidden space-y-3">
+              {paginated.map((d) => (
+                <DocCard
+                  key={d.id}
+                  doc={d}
+                  vehicles={vehicles}
+                  onEdit={() => setEditingDoc(d)}
+                  onDelete={() => setDeletingDoc(d)}
+                />
+              ))}
+              {paginated.length === 0 && (
+                <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
+                  Aucun document ne correspond aux filtres sélectionnés.
+                </div>
+              )}
+            </div>
+
+            {/* ═══════════════════ PAGINATION ═══════════════════ */}
+            {totalPages > 1 && (
+              <div className="flex flex-col items-center gap-3 py-2">
+                <p className="text-xs text-muted-foreground">
+                  Affichage {startIdx + 1}–{Math.min(startIdx + ITEMS_PER_PAGE, filtered.length)} sur {filtered.length}
+                </p>
+
+                <div className="hidden sm:flex items-center gap-1">
+                  <PageBtn onClick={() => goToPage(1)} disabled={safePage === 1} icon={<ChevronsLeft className="h-4 w-4" />} />
+                  <PageBtn onClick={() => goToPage(safePage - 1)} disabled={safePage === 1} icon={<ChevronLeft className="h-4 w-4" />} />
+
+                  {getVisiblePages().map((p, i) =>
+                    p === "..." ? (
+                      <span key={`dots-${i}`} className="px-2 text-sm text-muted-foreground">…</span>
+                    ) : (
+                      <button
+                        key={p}
+                        onClick={() => goToPage(p as number)}
+                        className={cn(
+                          "h-8 w-8 rounded-lg text-sm font-medium transition-colors",
+                          safePage === p
+                            ? "bg-primary text-primary-foreground"
+                            : "border border-input bg-background text-foreground hover:bg-muted"
+                        )}
+                      >
+                        {p}
+                      </button>
+                    )
+                  )}
+
+                  <PageBtn onClick={() => goToPage(safePage + 1)} disabled={safePage === totalPages} icon={<ChevronRight className="h-4 w-4" />} />
+                  <PageBtn onClick={() => goToPage(totalPages)} disabled={safePage === totalPages} icon={<ChevronsRight className="h-4 w-4" />} />
+                </div>
+
+                <div className="flex sm:hidden items-center gap-3 w-full">
+                  <button
+                    onClick={() => goToPage(safePage - 1)}
+                    disabled={safePage === 1}
+                    className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-input bg-background px-3 py-2 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <ChevronLeft className="h-4 w-4" /> Précédent
+                  </button>
+                  <span className="text-sm font-medium">{safePage} / {totalPages}</span>
+                  <button
+                    onClick={() => goToPage(safePage + 1)}
+                    disabled={safePage === totalPages}
+                    className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-input bg-background px-3 py-2 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Suivant <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
-      {/* Modal d'ajout */}
-      {isOpen && <AddDocumentModal onClose={() => setIsOpen(false)} vehicles={vehicles} onAdd={addDocument} />}
+      {isAddOpen && (
+        <DocumentFormModal
+          mode="create"
+          onClose={() => setIsAddOpen(false)}
+          vehicles={vehicles}
+          onSubmit={(input) => addDocument(input)}
+        />
+      )}
+
+      {editingDoc && (
+        <DocumentFormModal
+          mode="edit"
+          initialDoc={editingDoc}
+          onClose={() => setEditingDoc(null)}
+          vehicles={vehicles}
+          onSubmit={(input) => editDocument(editingDoc.id, input)}
+        />
+      )}
+
+      {deletingDoc && (
+        <DeleteConfirmDialog
+          doc={deletingDoc}
+          onCancel={() => setDeletingDoc(null)}
+          onConfirm={handleDeleteConfirm}
+        />
+      )}
     </AppLayout>
   );
 }
@@ -440,7 +530,59 @@ function PageBtn({ onClick, disabled, icon }: { onClick: () => void; disabled: b
   );
 }
 
-function DocRow({ doc, vehicles }: { doc: any; vehicles: any[] }) {
+/* ─── Menu d'actions (Modifier / Supprimer) ─── */
+
+function RowActions({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div
+      className="relative inline-block text-left"
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setOpen(false);
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted"
+        aria-label="Actions"
+      >
+        <MoreVertical className="h-4 w-4" />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 z-20 mt-1 w-40 overflow-hidden rounded-lg border border-border bg-card py-1 shadow-lg">
+          <button
+            type="button"
+            onClick={() => { setOpen(false); onEdit(); }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors hover:bg-muted"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Modifier
+          </button>
+          <button
+            type="button"
+            onClick={() => { setOpen(false); onDelete(); }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive transition-colors hover:bg-destructive/10"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Supprimer
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DocRow({
+  doc, vehicles, onEdit, onDelete,
+}: {
+  doc: DocumentDTO;
+  vehicles: any[];
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   const v = vehicles.find((x) => x.id === doc.vehicleId);
   const days = daysUntil(doc.expiryDate);
   const urgency = days < 0 ? "expired" : days < 30 ? "soon" : "ok";
@@ -474,11 +616,21 @@ function DocRow({ doc, vehicles }: { doc: any; vehicles: any[] }) {
           {cfg.label}
         </span>
       </TableCell>
+      <TableCell>
+        <RowActions onEdit={onEdit} onDelete={onDelete} />
+      </TableCell>
     </TableRow>
   );
 }
 
-function DocCard({ doc, vehicles }: { doc: any; vehicles: any[] }) {
+function DocCard({
+  doc, vehicles, onEdit, onDelete,
+}: {
+  doc: DocumentDTO;
+  vehicles: any[];
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   const v = vehicles.find((x) => x.id === doc.vehicleId);
   const days = daysUntil(doc.expiryDate);
   const urgency = days < 0 ? "expired" : days < 30 ? "soon" : "ok";
@@ -490,7 +642,6 @@ function DocCard({ doc, vehicles }: { doc: any; vehicles: any[] }) {
 
   return (
     <div className="rounded-xl border border-border bg-card p-4 space-y-3">
-      {/* Header : véhicule + statut */}
       <div className="flex items-start justify-between gap-3">
         {v && (
           <Link to="/vehicles/$id" params={{ id: v.id }} className="flex items-center gap-3">
@@ -501,13 +652,15 @@ function DocCard({ doc, vehicles }: { doc: any; vehicles: any[] }) {
             </div>
           </Link>
         )}
-        <span className={cn("shrink-0 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium", cfg.cls)}>
-          {urgency !== "ok" && <AlertTriangle className="h-3 w-3" />}
-          {cfg.label}
-        </span>
+        <div className="flex shrink-0 items-center gap-1">
+          <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium", cfg.cls)}>
+            {urgency !== "ok" && <AlertTriangle className="h-3 w-3" />}
+            {cfg.label}
+          </span>
+          <RowActions onEdit={onEdit} onDelete={onDelete} />
+        </div>
       </div>
 
-      {/* Détails */}
       <div className="grid grid-cols-2 gap-2 text-sm">
         <div>
           <p className="text-[10px] uppercase text-muted-foreground">Type</p>
@@ -521,58 +674,94 @@ function DocCard({ doc, vehicles }: { doc: any; vehicles: any[] }) {
           <p className="text-[10px] uppercase text-muted-foreground">Expiration</p>
           <p>{new Date(doc.expiryDate).toLocaleDateString("fr-FR", { dateStyle: "long" })}</p>
         </div>
+        {resolveFileUrl(doc.fileUrl) && (
+          <div className="col-span-2">
+            <a
+              href={resolveFileUrl(doc.fileUrl)!}
+              target="_blank"
+              rel="noreferrer"
+              className="text-xs font-medium text-primary underline underline-offset-2"
+            >
+              Voir la photo du document
+            </a>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   MODAL D'AJOUT
+   MODAL D'AJOUT / MODIFICATION (formulaire partagé)
    ═══════════════════════════════════════════════════════════════ */
 
-function AddDocumentModal({ onClose, vehicles, onAdd }: { onClose: () => void; vehicles: any[]; onAdd: (doc: any) => void }) {
-  const [vehicleId, setVehicleId] = useState("");
-  const [type, setType] = useState("");
-  const [number, setNumber] = useState("");
-  const [expiryDate, setExpiryDate] = useState("");
-  const [photo, setPhoto] = useState<string | null>(null);
-  const [photoName, setPhotoName] = useState("");
+function DocumentFormModal({
+  mode, initialDoc, onClose, vehicles, onSubmit,
+}: {
+  mode: "create" | "edit";
+  initialDoc?: DocumentDTO;
+  onClose: () => void;
+  vehicles: any[];
+  onSubmit: (input: DocumentInput) => Promise<unknown>;
+}) {
+  const [vehicleId, setVehicleId] = useState(initialDoc?.vehicleId ?? "");
+  const [type, setType] = useState(initialDoc?.type ?? "");
+  const [number, setNumber] = useState(initialDoc?.number ?? "");
+  const [expiryDate, setExpiryDate] = useState(initialDoc?.expiryDate ?? "");
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  // En édition, on affiche la photo existante tant que l'utilisateur n'en choisit pas une nouvelle.
+  const [photoPreview, setPhotoPreview] = useState<string | null>(
+    initialDoc?.fileUrl ? resolveFileUrl(initialDoc.fileUrl) : null
+  );
+  const [photoName, setPhotoName] = useState<string | null>(
+    resolveFileUrl(initialDoc?.fileUrl ?? null) ? "Photo actuelle" : null
+  );
   const [isDragging, setIsDragging] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const isEdit = mode === "edit";
 
   const handleFile = (file: File) => {
-    if (file.type.startsWith("image/")) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setPhoto(e.target?.result as string);
-        setPhotoName(file.name);
-      };
-      reader.readAsDataURL(file);
+    if (!file.type.startsWith("image/")) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setError("La photo dépasse la taille maximale de 5 Mo.");
+      return;
     }
+    setError(null);
+    setPhotoFile(file); // fichier réel envoyé au backend
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setPhotoPreview(e.target?.result as string); // aperçu local uniquement
+      setPhotoName(file.name);
+    };
+    reader.readAsDataURL(file);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!vehicleId || !type || !number || !expiryDate) return;
 
-    const newDoc = {
-      id: `doc-${Date.now()}`,
-      vehicleId,
-      type,
-      number,
-      expiryDate,
-      photo,
-      photoName,
-    };
-
-    onAdd(newDoc);
-    onClose();
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      // photo: null si aucune nouvelle photo choisie -> le backend garde le fileUrl existant en édition
+      await onSubmit({ vehicleId, type, number, expiryDate, photo: photoFile });
+      onClose();
+    } catch (err: any) {
+      setError(err.message ?? "Une erreur est survenue lors de l'enregistrement.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4">
       <div className="w-full max-w-lg rounded-t-2xl sm:rounded-2xl border border-border bg-card p-4 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-semibold">Ajouter un document</h2>
+          <h2 className="text-lg font-semibold">
+            {isEdit ? "Modifier le document" : "Ajouter un document"}
+          </h2>
           <button
             onClick={onClose}
             className="rounded-lg p-2 text-muted-foreground hover:bg-muted transition-colors"
@@ -580,6 +769,13 @@ function AddDocumentModal({ onClose, vehicles, onAdd }: { onClose: () => void; v
             <X className="h-5 w-5" />
           </button>
         </div>
+
+        {error && (
+          <div className="mb-4 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            {error}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -640,7 +836,9 @@ function AddDocumentModal({ onClose, vehicles, onAdd }: { onClose: () => void; v
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1.5">Photo du document</label>
+            <label className="block text-sm font-medium mb-1.5">
+              Photo du document {isEdit && <span className="text-muted-foreground font-normal">(laisser vide pour conserver l'actuelle)</span>}
+            </label>
             <div
               onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
               onDragLeave={() => setIsDragging(false)}
@@ -654,7 +852,7 @@ function AddDocumentModal({ onClose, vehicles, onAdd }: { onClose: () => void; v
                 "relative rounded-xl border-2 border-dashed p-6 text-center transition-colors",
                 isDragging
                   ? "border-primary bg-primary/5"
-                  : photo
+                  : photoPreview
                   ? "border-success bg-success/5"
                   : "border-muted-foreground/25 hover:border-muted-foreground/50"
               )}
@@ -668,16 +866,17 @@ function AddDocumentModal({ onClose, vehicles, onAdd }: { onClose: () => void; v
                 }}
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
               />
-              {photo ? (
+              {photoPreview ? (
                 <div className="space-y-2">
-                  <img src={photo} alt="Aperçu" className="mx-auto h-32 rounded-lg object-cover shadow-sm" />
+                  <img src={photoPreview} alt="Aperçu" className="mx-auto h-32 rounded-lg object-cover shadow-sm" />
                   <p className="text-xs text-muted-foreground">{photoName}</p>
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setPhoto(null);
-                      setPhotoName("");
+                      setPhotoFile(null);
+                      setPhotoPreview(null);
+                      setPhotoName(null);
                     }}
                     className="text-xs text-destructive hover:underline"
                   >
@@ -700,18 +899,94 @@ function AddDocumentModal({ onClose, vehicles, onAdd }: { onClose: () => void; v
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-input bg-background px-4 py-2.5 text-sm font-medium transition-colors hover:bg-muted"
+              disabled={isSubmitting}
+              className="rounded-lg border border-input bg-background px-4 py-2.5 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-50"
             >
               Annuler
             </button>
             <button
               type="submit"
-              className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+              disabled={isSubmitting}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-60"
             >
-              Enregistrer
+              {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+              {isEdit ? "Enregistrer les modifications" : "Enregistrer"}
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   MODAL DE CONFIRMATION DE SUPPRESSION
+   ═══════════════════════════════════════════════════════════════ */
+
+function DeleteConfirmDialog({
+  doc, onCancel, onConfirm,
+}: {
+  doc: DocumentDTO;
+  onCancel: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleConfirm = async () => {
+    setIsDeleting(true);
+    setError(null);
+    try {
+      await onConfirm();
+    } catch (err: any) {
+      setError(err.message ?? "Erreur lors de la suppression.");
+      setIsDeleting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-2xl">
+        <div className="mb-4 flex items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-destructive/10">
+            <AlertTriangle className="h-5 w-5 text-destructive" />
+          </div>
+          <h2 className="text-base font-semibold">Supprimer ce document ?</h2>
+        </div>
+
+        <p className="mb-1 text-sm text-muted-foreground">
+          {docTypeLabels[doc.type]} — {doc.number}
+        </p>
+        <p className="mb-4 text-sm text-muted-foreground">
+          Cette action est définitive et ne peut pas être annulée.
+        </p>
+
+        {error && (
+          <div className="mb-4 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            {error}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isDeleting}
+            className="rounded-lg border border-input bg-background px-4 py-2.5 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-50"
+          >
+            Annuler
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={isDeleting}
+            className="inline-flex items-center gap-2 rounded-lg bg-destructive px-4 py-2.5 text-sm font-medium text-destructive-foreground shadow-sm transition-colors hover:bg-destructive/90 disabled:opacity-60"
+          >
+            {isDeleting && <Loader2 className="h-4 w-4 animate-spin" />}
+            Supprimer
+          </button>
+        </div>
       </div>
     </div>
   );

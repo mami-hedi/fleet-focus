@@ -1,56 +1,89 @@
 import { create } from "zustand";
 import {
   inspections as initialInspections,
-  maintenances as initialMaintenances,
-  documents as initialDocuments,
-  recurrenceMonths,
-  recurrenceLabels,
   type Vehicle,
   type Inspection,
-  type Maintenance,
-  type DocumentItem,
   type HistoryEntry,
 } from "./mock-data";
-import { vehicleService } from "./vehicleService";
+import { vehicleService, type VehicleInput } from "./vehicleService";
+import { documentService, type DocumentDTO, type DocumentInput } from "./documentService";
+import { maintenanceService, type MaintenanceDTO, type MaintenanceInput } from "./maintenanceService";
+import { fuelService, type FuelEntryDTO, type FuelInput, type FuelListParams } from "./fuelService";
+import { incidentService, type Incident, type IncidentPayload, type IncidentListParams } from "./incidentService";
 import { ApiRequestError } from "./api-client";
 
 interface FleetState {
   vehicles: Vehicle[];
   inspections: Inspection[];
-  maintenances: Maintenance[];
-  documents: DocumentItem[];
+  maintenances: MaintenanceDTO[];
+  documents: DocumentDTO[];
+  incidents: Incident[];
   history: HistoryEntry[];
   dismissedAlertIds: string[];
+
   vehiclesLoaded: boolean;
   vehiclesLoading: boolean;
   vehiclesError: string | null;
   fetchVehicles: () => Promise<void>;
-  addVehicle: (v: Omit<Vehicle, "id">) => Promise<Vehicle>;
-  updateVehicle: (id: string, patch: Partial<Vehicle>) => Promise<void>;
+  addVehicle: (v: VehicleInput) => Promise<Vehicle>;
+  updateVehicle: (id: string, patch: VehicleInput) => Promise<void>;
   deleteVehicle: (id: string) => Promise<void>;
-  addMaintenance: (m: Omit<Maintenance, "id">) => void;
+
+  documentsLoaded: boolean;
+  documentsLoading: boolean;
+  documentsError: string | null;
+  fetchDocuments: () => Promise<void>;
+  addDocument: (input: DocumentInput) => Promise<DocumentDTO>;
+  editDocument: (id: number, input: Partial<DocumentInput>) => Promise<void>;
+  removeDocument: (id: number) => Promise<void>;
+
+  maintenancesLoaded: boolean;
+  maintenancesLoading: boolean;
+  maintenancesError: string | null;
+  fetchMaintenances: () => Promise<void>;
+  addMaintenance: (input: MaintenanceInput) => Promise<MaintenanceDTO[]>;
+  editMaintenance: (id: string, input: Partial<MaintenanceInput>) => Promise<void>;
+  removeMaintenance: (id: string) => Promise<void>;
+
+  incidentsLoaded: boolean;
+  incidentsLoading: boolean;
+  incidentsError: string | null;
+  fetchIncidents: (params?: IncidentListParams) => Promise<void>;
+  addIncident: (input: IncidentPayload) => Promise<Incident>;
+  updateIncident: (id: string, input: Partial<IncidentPayload>) => Promise<void>;
+  deleteIncident: (id: string) => Promise<void>;
+
   addInspection: (i: Omit<Inspection, "id">) => void;
-  addDocument: (d: Omit<DocumentItem, "id">) => void;
   dismissAlert: (id: string) => void;
+
+  fuelEntries: FuelEntryDTO[];
+  fuelLoaded: boolean;
+  fuelLoading: boolean;
+  fuelError: string | null;
+  fetchFuelEntries: (params?: FuelListParams) => Promise<void>;
+  addFuelEntry: (input: FuelInput) => Promise<FuelEntryDTO>;
+  editFuelEntry: (id: string, input: Partial<FuelInput>) => Promise<void>;
+  removeFuelEntry: (id: string) => Promise<void>;
 }
 
 function nowIso() {
   return new Date().toISOString();
 }
 
-function addMonths(dateStr: string, months: number) {
-  const d = new Date(dateStr);
-  d.setMonth(d.getMonth() + months);
-  return d.toISOString().slice(0, 10);
+function errorMessage(err: unknown): string {
+  return err instanceof ApiRequestError ? err.detail : (err as Error).message;
 }
 
 export const useFleetStore = create<FleetState>((set, get) => ({
   vehicles: [],
   inspections: [...initialInspections],
-  maintenances: [...initialMaintenances],
-  documents: [...initialDocuments],
+  maintenances: [],
+  documents: [],
+  incidents: [],
+  fuelEntries: [],
   history: [],
   dismissedAlertIds: [],
+
   vehiclesLoaded: false,
   vehiclesLoading: false,
   vehiclesError: null,
@@ -63,8 +96,7 @@ export const useFleetStore = create<FleetState>((set, get) => ({
       const vehicles = await vehicleService.list();
       set({ vehicles, vehiclesLoaded: true, vehiclesLoading: false });
     } catch (err) {
-      const message = err instanceof ApiRequestError ? err.detail : (err as Error).message;
-      set({ vehiclesError: message, vehiclesLoading: false });
+      set({ vehiclesError: errorMessage(err), vehiclesLoading: false });
     }
   },
 
@@ -86,24 +118,17 @@ export const useFleetStore = create<FleetState>((set, get) => ({
   },
 
   updateVehicle: async (id, patch) => {
-    const before = get().vehicles.find((v) => v.id === id);
     const updated = await vehicleService.update(id, patch);
-    const changed = before
-      ? (Object.keys(patch) as (keyof Vehicle)[]).filter(
-          (k) => JSON.stringify(before[k]) !== JSON.stringify(patch[k]),
-        )
-      : [];
     const entry: HistoryEntry = {
       id: `h${Date.now()}`,
       vehicleId: id,
       timestamp: nowIso(),
       kind: "vehicle_updated",
       label: "Fiche véhicule modifiée",
-      details: changed.length ? `Champs : ${changed.join(", ")}` : undefined,
     };
     set((s) => ({
       vehicles: s.vehicles.map((v) => (v.id === id ? updated : v)),
-      history: changed.length ? [entry, ...s.history] : s.history,
+      history: [entry, ...s.history],
     }));
   },
 
@@ -114,45 +139,156 @@ export const useFleetStore = create<FleetState>((set, get) => ({
       inspections: s.inspections.filter((i) => i.vehicleId !== id),
       maintenances: s.maintenances.filter((m) => m.vehicleId !== id),
       documents: s.documents.filter((d) => d.vehicleId !== id),
+      incidents: s.incidents.filter((i) => i.vehicleId !== id),
+      fuelEntries: s.fuelEntries.filter((f) => f.vehicleId !== id),
       history: s.history.filter((h) => h.vehicleId !== id),
     }));
   },
 
-  addMaintenance: (m) =>
-    set((s) => {
-      const rec = m.recurrence ?? "none";
-      const months = recurrenceMonths[rec];
-      const seriesId = rec !== "none" ? `s${Date.now()}` : undefined;
-      const base = Date.now();
-      const items: Maintenance[] = [];
-      const count = rec === "none" ? 1 : 4;
-      for (let i = 0; i < count; i++) {
-        items.push({
-          ...m,
-          id: `m${base}-${i}`,
-          scheduledDate: i === 0 ? m.scheduledDate : addMonths(m.scheduledDate, months * i),
-          seriesId,
-          recurrence: rec,
-          status: i === 0 ? m.status : "upcoming",
-        });
-      }
-      const label =
-        rec === "none"
-          ? "Maintenance planifiée"
-          : `Maintenance récurrente planifiée (${recurrenceLabels[rec].toLowerCase()})`;
-      const entry: HistoryEntry = {
-        id: `h${base}`,
-        vehicleId: m.vehicleId,
-        timestamp: nowIso(),
-        kind: "maintenance_scheduled",
-        label,
-        details: `${m.type} — ${m.garage} — ${new Date(m.scheduledDate).toLocaleDateString("fr-FR")}`,
-      };
-      return {
-        maintenances: [...items, ...s.maintenances],
-        history: [entry, ...s.history],
-      };
-    }),
+  documentsLoaded: false,
+  documentsLoading: false,
+  documentsError: null,
+
+  fetchDocuments: async () => {
+    if (get().documentsLoading) return;
+    set({ documentsLoading: true, documentsError: null });
+    try {
+      const documents = await documentService.list();
+      set({ documents, documentsLoaded: true, documentsLoading: false });
+    } catch (err) {
+      set({ documentsError: errorMessage(err), documentsLoading: false });
+    }
+  },
+
+  addDocument: async (input) => {
+    const created = await documentService.create(input);
+    const entry: HistoryEntry = {
+      id: `h${Date.now()}`,
+      vehicleId: created.vehicleId,
+      timestamp: nowIso(),
+      kind: "document_created",
+      label: "Document ajouté",
+      details: `${created.type} — ${created.number}`,
+    };
+    set((s) => ({
+      documents: [created, ...s.documents],
+      history: [entry, ...s.history],
+    }));
+    return created;
+  },
+
+  editDocument: async (id, input) => {
+    const updated = await documentService.update(id, input);
+    set((s) => ({
+      documents: s.documents.map((d) => (d.id === id ? updated : d)),
+    }));
+  },
+
+  removeDocument: async (id) => {
+    await documentService.remove(id);
+    set((s) => ({
+      documents: s.documents.filter((d) => d.id !== id),
+    }));
+  },
+
+  maintenancesLoaded: false,
+  maintenancesLoading: false,
+  maintenancesError: null,
+
+  fetchMaintenances: async () => {
+    if (get().maintenancesLoading) return;
+    set({ maintenancesLoading: true, maintenancesError: null });
+    try {
+      const maintenances = await maintenanceService.list();
+      set({ maintenances, maintenancesLoaded: true, maintenancesLoading: false });
+    } catch (err) {
+      set({ maintenancesError: errorMessage(err), maintenancesLoading: false });
+    }
+  },
+
+  // Le backend génère lui-même les occurrences récurrentes (voir maintenance.controller.js)
+  // et renvoie donc un tableau, même pour une maintenance simple (1 seul élément).
+  addMaintenance: async (input) => {
+    const created = await maintenanceService.create(input);
+    const first = created[0];
+    const label =
+      !first.recurrence || first.recurrence === "none"
+        ? "Maintenance planifiée"
+        : "Maintenance récurrente planifiée";
+    const entry: HistoryEntry = {
+      id: `h${Date.now()}`,
+      vehicleId: first.vehicleId,
+      timestamp: nowIso(),
+      kind: "maintenance_scheduled",
+      label,
+      details: `${first.type} — ${first.garage} — ${new Date(first.scheduledDate).toLocaleDateString("fr-FR")}`,
+    };
+    set((s) => ({
+      maintenances: [...created, ...s.maintenances],
+      history: [entry, ...s.history],
+    }));
+    return created;
+  },
+
+  editMaintenance: async (id, input) => {
+    const updated = await maintenanceService.update(id, input);
+    set((s) => ({
+      maintenances: s.maintenances.map((m) => (m.id === id ? updated : m)),
+    }));
+  },
+
+  removeMaintenance: async (id) => {
+    await maintenanceService.remove(id);
+    set((s) => ({
+      maintenances: s.maintenances.filter((m) => m.id !== id),
+    }));
+  },
+
+  incidentsLoaded: false,
+  incidentsLoading: false,
+  incidentsError: null,
+
+  fetchIncidents: async (params) => {
+    if (get().incidentsLoading) return;
+    set({ incidentsLoading: true, incidentsError: null });
+    try {
+      const incidents = await incidentService.list(params);
+      set({ incidents, incidentsLoaded: true, incidentsLoading: false });
+    } catch (err) {
+      set({ incidentsError: errorMessage(err), incidentsLoading: false });
+    }
+  },
+
+  addIncident: async (input) => {
+    const created = await incidentService.create(input);
+    const entry: HistoryEntry = {
+      id: `h${Date.now()}`,
+      vehicleId: created.vehicleId,
+      timestamp: nowIso(),
+      kind: "incident_created",
+      label: "Incident déclaré",
+      details: `${created.description} — ${created.location}`,
+    };
+    set((s) => ({
+      incidents: [created, ...s.incidents],
+      history: [entry, ...s.history],
+    }));
+    return created;
+  },
+
+  updateIncident: async (id, input) => {
+    const updated = await incidentService.update(id, input);
+    set((s) => ({
+      incidents: s.incidents.map((i) => (i.id === id ? updated : i)),
+    }));
+  },
+
+  deleteIncident: async (id) => {
+    await incidentService.remove(id);
+    set((s) => ({
+      incidents: s.incidents.filter((i) => i.id !== id),
+    }));
+  },
 
   addInspection: (i) =>
     set((s) => {
@@ -171,27 +307,46 @@ export const useFleetStore = create<FleetState>((set, get) => ({
       };
     }),
 
-  addDocument: (d) =>
-    set((s) => {
-      const id = `doc-${Date.now()}`;
-      const entry: HistoryEntry = {
-        id: `h${Date.now()}`,
-        vehicleId: d.vehicleId,
-        timestamp: nowIso(),
-        kind: "document_created",
-        label: "Document ajouté",
-        details: `${d.type} — ${d.number}`,
-      };
-      return {
-        documents: [{ ...d, id }, ...s.documents],
-        history: [entry, ...s.history],
-      };
-    }),
-
   dismissAlert: (id) =>
     set((s) => ({
       dismissedAlertIds: [...s.dismissedAlertIds, id],
     })),
+
+  // ─── Carburant ──────────────────────────────────────────────────────────
+  fuelLoaded: false,
+  fuelLoading: false,
+  fuelError: null,
+
+  fetchFuelEntries: async (params) => {
+    if (get().fuelLoading) return;
+    set({ fuelLoading: true, fuelError: null });
+    try {
+      const fuelEntries = await fuelService.list(params);
+      set({ fuelEntries, fuelLoaded: true, fuelLoading: false });
+    } catch (err) {
+      set({ fuelError: errorMessage(err), fuelLoading: false });
+    }
+  },
+
+  addFuelEntry: async (input) => {
+    const created = await fuelService.create(input);
+    set((s) => ({ fuelEntries: [created, ...s.fuelEntries] }));
+    return created;
+  },
+
+  editFuelEntry: async (id, input) => {
+    const updated = await fuelService.update(id, input);
+    set((s) => ({
+      fuelEntries: s.fuelEntries.map((f) => (f.id === id ? updated : f)),
+    }));
+  },
+
+  removeFuelEntry: async (id) => {
+    await fuelService.remove(id);
+    set((s) => ({
+      fuelEntries: s.fuelEntries.filter((f) => f.id !== id),
+    }));
+  },
 }));
 
 export const useVehicle = (id: string) =>

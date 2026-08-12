@@ -40,9 +40,10 @@ export interface HistoryEntry {
     | "vehicle_updated"
     | "vehicle_deleted"
     | "maintenance_scheduled"
-    | "inspection_created";
+    | "inspection_created"
+    | "incident_created"
+    | "document_created";
   label: string;
-  details?: string;
 }
 
 export interface Alert {

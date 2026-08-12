@@ -26,7 +26,11 @@ const Vehicle = sequelize.define(
       allowNull: false,
       defaultValue: "available",
     },
+    // Chemin relatif ("/uploads/vehicles/xxx.jpg") ou URL externe (ex: image par défaut
+    // Unsplash) — jamais de base64. Un STRING (VARCHAR) suffit largement, contrairement
+    // au précédent TEXT('long') qui n'était nécessaire que pour stocker le blob lui-même.
     image: { type: DataTypes.STRING, allowNull: true },
+    // Tableau de chemins relatifs/URLs, jamais de base64.
     photos: { type: DataTypes.JSON, allowNull: true, defaultValue: [] },
   },
   { tableName: "vehicles" }
