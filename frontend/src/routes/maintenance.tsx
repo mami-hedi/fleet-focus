@@ -1,12 +1,36 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Calendar, Wrench, Euro, MapPin, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, AlertTriangle, Loader2 } from "lucide-react";
+import {
+  Plus,
+  Calendar,
+  Wrench,
+  Euro,
+  MapPin,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  AlertTriangle,
+  Loader2,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useFleetStore } from "@/lib/store";
 import { MaintenanceDialog } from "@/components/MaintenanceDialog";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import type { MaintenanceDTO } from "@/lib/maintenanceService";
 
 type Filter = "all" | "upcoming" | "in_progress" | "completed";
 
@@ -29,10 +53,40 @@ function MaintenancePage() {
   const maintenancesLoading = useFleetStore((s) => s.maintenancesLoading);
   const maintenancesError = useFleetStore((s) => s.maintenancesError);
   const fetchMaintenances = useFleetStore((s) => s.fetchMaintenances);
+  const removeMaintenance = useFleetStore((s) => s.removeMaintenance);
   const vehicles = useFleetStore((s) => s.vehicles);
   const [filter, setFilter] = useState<Filter>("all");
-  const [dialogOpen, setDialogOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+
+  // ─── Dialog création / édition (même composant, distingué par `editingMaintenance`) ───
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editingMaintenance, setEditingMaintenance] = useState<MaintenanceDTO | null>(null);
+  const isFormOpen = createOpen || editingMaintenance !== null;
+
+  const handleFormOpenChange = (open: boolean) => {
+    if (!open) {
+      setCreateOpen(false);
+      setEditingMaintenance(null);
+    }
+  };
+
+  // ─── Confirmation de suppression ───
+  const [deletingMaintenance, setDeletingMaintenance] = useState<MaintenanceDTO | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    if (!deletingMaintenance) return;
+    setIsDeleting(true);
+    try {
+      await removeMaintenance(deletingMaintenance.id);
+      toast.success("Maintenance supprimée");
+      setDeletingMaintenance(null);
+    } catch (err: any) {
+      toast.error(err.message ?? "Erreur lors de la suppression de la maintenance.");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   useEffect(() => {
     fetchMaintenances();
@@ -68,7 +122,7 @@ function MaintenancePage() {
     <AppLayout
       title="Maintenance"
       actions={
-        <Button size="sm" className="gap-1.5" onClick={() => setDialogOpen(true)}>
+        <Button size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
           <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Planifier</span>
           <span className="sm:hidden">Planifier</span>
         </Button>
@@ -147,18 +201,25 @@ function MaintenancePage() {
                     <TableHead>Garage</TableHead>
                     <TableHead>Coût</TableHead>
                     <TableHead>Statut</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {paginated.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
+                      <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
                         Aucune maintenance dans cette catégorie.
                       </TableCell>
                     </TableRow>
                   )}
                   {paginated.map((m) => (
-                    <MaintenanceRow key={m.id} maintenance={m} vehicles={vehicles} />
+                    <MaintenanceRow
+                      key={m.id}
+                      maintenance={m}
+                      vehicles={vehicles}
+                      onEdit={() => setEditingMaintenance(m)}
+                      onDelete={() => setDeletingMaintenance(m)}
+                    />
                   ))}
                 </TableBody>
               </Table>
@@ -167,7 +228,13 @@ function MaintenancePage() {
             {/* ═══════════════════ CARTES MOBILE ═══════════════════ */}
             <div className="sm:hidden space-y-3">
               {paginated.map((m) => (
-                <MaintenanceCard key={m.id} maintenance={m} vehicles={vehicles} />
+                <MaintenanceCard
+                  key={m.id}
+                  maintenance={m}
+                  vehicles={vehicles}
+                  onEdit={() => setEditingMaintenance(m)}
+                  onDelete={() => setDeletingMaintenance(m)}
+                />
               ))}
               {paginated.length === 0 && (
                 <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
@@ -235,7 +302,14 @@ function MaintenancePage() {
         )}
       </div>
 
-      <MaintenanceDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+      <MaintenanceDialog open={isFormOpen} onOpenChange={handleFormOpenChange} maintenance={editingMaintenance} />
+
+      <DeleteMaintenanceDialog
+        maintenance={deletingMaintenance}
+        isDeleting={isDeleting}
+        onCancel={() => setDeletingMaintenance(null)}
+        onConfirm={handleDelete}
+      />
     </AppLayout>
   );
 }
@@ -244,7 +318,43 @@ function MaintenancePage() {
    SOUS-COMPOSANTS
    ═══════════════════════════════════════════════════════════════ */
 
-function MaintenanceRow({ maintenance: m, vehicles }: { maintenance: any; vehicles: any[] }) {
+interface RowActionsProps {
+  onEdit: () => void;
+  onDelete: () => void;
+}
+
+function RowActions({ onEdit, onDelete }: RowActionsProps) {
+  return (
+    <div className="flex items-center justify-end gap-1">
+      <button
+        onClick={onEdit}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        aria-label="Modifier"
+      >
+        <Pencil className="h-3.5 w-3.5" />
+      </button>
+      <button
+        onClick={onDelete}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+        aria-label="Supprimer"
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+function MaintenanceRow({
+  maintenance: m,
+  vehicles,
+  onEdit,
+  onDelete,
+}: {
+  maintenance: MaintenanceDTO;
+  vehicles: any[];
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   const v = vehicles.find((x) => x.id === m.vehicleId);
   const status = {
     upcoming: { label: "À venir", cls: "bg-info/15 text-info" },
@@ -279,11 +389,24 @@ function MaintenanceRow({ maintenance: m, vehicles }: { maintenance: any; vehicl
           {status.label}
         </span>
       </TableCell>
+      <TableCell>
+        <RowActions onEdit={onEdit} onDelete={onDelete} />
+      </TableCell>
     </TableRow>
   );
 }
 
-function MaintenanceCard({ maintenance: m, vehicles }: { maintenance: any; vehicles: any[] }) {
+function MaintenanceCard({
+  maintenance: m,
+  vehicles,
+  onEdit,
+  onDelete,
+}: {
+  maintenance: MaintenanceDTO;
+  vehicles: any[];
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   const v = vehicles.find((x) => x.id === m.vehicleId);
   const status = {
     upcoming: { label: "À venir", cls: "bg-info/15 text-info border-info/30" },
@@ -346,7 +469,56 @@ function MaintenanceCard({ maintenance: m, vehicles }: { maintenance: any; vehic
           </div>
         </div>
       </div>
+
+      {/* Actions */}
+      <div className="flex items-center justify-end gap-2 border-t border-border pt-3">
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={onEdit}>
+          <Pencil className="h-3.5 w-3.5" /> Modifier
+        </Button>
+        <Button variant="outline" size="sm" className="gap-1.5 text-destructive hover:text-destructive" onClick={onDelete}>
+          <Trash2 className="h-3.5 w-3.5" /> Supprimer
+        </Button>
+      </div>
     </div>
+  );
+}
+
+function DeleteMaintenanceDialog({
+  maintenance,
+  isDeleting,
+  onCancel,
+  onConfirm,
+}: {
+  maintenance: MaintenanceDTO | null;
+  isDeleting: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog open={maintenance !== null} onOpenChange={(o) => !o && !isDeleting && onCancel()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Supprimer cette maintenance ?</DialogTitle>
+          <DialogDescription>
+            {maintenance?.type} — {maintenance?.garage}. Cette action est irréversible.
+            {maintenance?.seriesId && (
+              <span className="mt-2 block text-warning-foreground">
+                Cette maintenance fait partie d'une série récurrente : seule cette occurrence sera supprimée, les autres restent planifiées.
+              </span>
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onCancel} disabled={isDeleting}>
+            Annuler
+          </Button>
+          <Button type="button" variant="destructive" onClick={onConfirm} disabled={isDeleting} className="gap-2">
+            {isDeleting && <Loader2 className="h-4 w-4 animate-spin" />}
+            Supprimer
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

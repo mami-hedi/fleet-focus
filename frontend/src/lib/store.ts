@@ -10,6 +10,7 @@ import { documentService, type DocumentDTO, type DocumentInput } from "./documen
 import { maintenanceService, type MaintenanceDTO, type MaintenanceInput } from "./maintenanceService";
 import { fuelService, type FuelEntryDTO, type FuelInput, type FuelListParams } from "./fuelService";
 import { incidentService, type Incident, type IncidentPayload, type IncidentListParams } from "./incidentService";
+import { alertService, type AlertDTO, type AlertListParams } from "./alertService";
 import { ApiRequestError } from "./api-client";
 
 interface FleetState {
@@ -19,7 +20,13 @@ interface FleetState {
   documents: DocumentDTO[];
   incidents: Incident[];
   history: HistoryEntry[];
-  dismissedAlertIds: string[];
+
+  alerts: AlertDTO[];
+  alertsLoaded: boolean;
+  alertsLoading: boolean;
+  alertsError: string | null;
+  fetchAlerts: (params?: AlertListParams) => Promise<void>;
+  dismissAlert: (alertKey: string) => Promise<void>;
 
   vehiclesLoaded: boolean;
   vehiclesLoading: boolean;
@@ -54,7 +61,6 @@ interface FleetState {
   deleteIncident: (id: string) => Promise<void>;
 
   addInspection: (i: Omit<Inspection, "id">) => void;
-  dismissAlert: (id: string) => void;
 
   fuelEntries: FuelEntryDTO[];
   fuelLoaded: boolean;
@@ -82,7 +88,34 @@ export const useFleetStore = create<FleetState>((set, get) => ({
   incidents: [],
   fuelEntries: [],
   history: [],
-  dismissedAlertIds: [],
+
+  alerts: [],
+  alertsLoaded: false,
+  alertsLoading: false,
+  alertsError: null,
+
+  fetchAlerts: async (params) => {
+    if (get().alertsLoading) return;
+    set({ alertsLoading: true, alertsError: null });
+    try {
+      const alerts = await alertService.list(params);
+      set({ alerts, alertsLoaded: true, alertsLoading: false });
+    } catch (err) {
+      set({ alertsError: errorMessage(err), alertsLoading: false });
+    }
+  },
+
+  // Optimiste : on retire l'alerte de la liste locale immédiatement, puis on
+  // persiste côté backend. Si l'appel échoue, on la remet (rollback).
+  dismissAlert: async (alertKey) => {
+    const previous = get().alerts;
+    set((s) => ({ alerts: s.alerts.filter((a) => a.id !== alertKey) }));
+    try {
+      await alertService.dismiss(alertKey);
+    } catch (err) {
+      set({ alerts: previous, alertsError: errorMessage(err) });
+    }
+  },
 
   vehiclesLoaded: false,
   vehiclesLoading: false,
@@ -306,11 +339,6 @@ export const useFleetStore = create<FleetState>((set, get) => ({
         history: [entry, ...s.history],
       };
     }),
-
-  dismissAlert: (id) =>
-    set((s) => ({
-      dismissedAlertIds: [...s.dismissedAlertIds, id],
-    })),
 
   // ─── Carburant ──────────────────────────────────────────────────────────
   fuelLoaded: false,

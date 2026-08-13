@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
-  Plus, Search, Fuel, Calendar, Car, Gauge, Droplets,
+  Plus, Search, Fuel, Calendar, Gauge, Droplets,
   TrendingUp, Euro, ChevronLeft, ChevronRight,
-  ChevronsLeft, ChevronsRight, X, Pencil, Trash2
+  ChevronsLeft, ChevronsRight, X, Pencil, Trash2, AlertTriangle, Loader2
 } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
 import { useFleetStore } from "@/lib/store";
+import { ApiRequestError } from "@/lib/api-client";
+import type { FuelEntryDTO, FuelInput } from "@/lib/fuelService";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/fuel")({
@@ -27,67 +30,37 @@ export const Route = createFileRoute("/fuel")({
   component: FuelPage,
 });
 
-interface FuelEntry {
-  id: string;
-  vehicleId: string;
-  date: string;
-  station: string;
-  liters: number;
-  pricePerLiter: number;
-  totalCost: number;
-  mileage: number;
-  fullTank: boolean;
-}
-
 const ITEMS_PER_PAGE = 10;
 
-// ─── Mock data ───
-const initialEntries: FuelEntry[] = [
-  {
-    id: "f1",
-    vehicleId: "v1",
-    date: "2026-07-10",
-    station: "Total Energies",
-    liters: 45.5,
-    pricePerLiter: 2.15,
-    totalCost: 97.83,
-    mileage: 45230,
-    fullTank: true,
-  },
-  {
-    id: "f2",
-    vehicleId: "v2",
-    date: "2026-07-08",
-    station: "Shell",
-    liters: 38.2,
-    pricePerLiter: 2.18,
-    totalCost: 83.28,
-    mileage: 32150,
-    fullTank: true,
-  },
-  {
-    id: "f3",
-    vehicleId: "v1",
-    date: "2026-06-28",
-    station: "Agil",
-    liters: 42.0,
-    pricePerLiter: 2.12,
-    totalCost: 89.04,
-    mileage: 44850,
-    fullTank: true,
-  },
-];
-
 function FuelPage() {
-  const [entries, setEntries] = useState<FuelEntry[]>(initialEntries);
+  const entries = useFleetStore((s) => s.fuelEntries);
+  const fuelLoaded = useFleetStore((s) => s.fuelLoaded);
+  const fuelLoading = useFleetStore((s) => s.fuelLoading);
+  const fuelError = useFleetStore((s) => s.fuelError);
+  const fetchFuelEntries = useFleetStore((s) => s.fetchFuelEntries);
+  const addFuelEntry = useFleetStore((s) => s.addFuelEntry);
+  const editFuelEntry = useFleetStore((s) => s.editFuelEntry);
+  const removeFuelEntry = useFleetStore((s) => s.removeFuelEntry);
+  const vehicles = useFleetStore((s) => s.vehicles);
+  const vehiclesLoaded = useFleetStore((s) => s.vehiclesLoaded);
+  const fetchVehicles = useFleetStore((s) => s.fetchVehicles);
+
   const [query, setQuery] = useState("");
   const [vehicleFilter, setVehicleFilter] = useState<string>("all");
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editing, setEditing] = useState<FuelEntry | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<FuelEntry | null>(null);
+  const [editing, setEditing] = useState<FuelEntryDTO | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<FuelEntryDTO | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
 
-  const vehicles = useFleetStore((s) => s.vehicles);
+  useEffect(() => {
+    if (!fuelLoaded) fetchFuelEntries();
+    // La page /fuel peut être ouverte directement (sans passer par /vehicles) :
+    // on charge aussi la liste des véhicules, sinon le select du formulaire
+    // (ajout ET modification) reste vide et n'affiche pas le véhicule pré-sélectionné.
+    if (!vehiclesLoaded) fetchVehicles();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ─── Filtrage ───
   const filtered = entries.filter((e) => {
@@ -121,33 +94,30 @@ function FuelPage() {
   };
 
   // ─── Actions ───
-  const handleSave = (entry: Omit<FuelEntry, "id" | "totalCost">, id?: string) => {
-    const totalCost = entry.liters * entry.pricePerLiter;
-    if (id) {
-      setEntries((prev) => prev.map((e) => (e.id === id ? { ...entry, id, totalCost } : e)));
-    } else {
-      setEntries((prev) => [{ ...entry, id: `f${Date.now()}`, totalCost }, ...prev]);
-    }
-    setDialogOpen(false);
-    setEditing(null);
-  };
-
-  const handleDelete = () => {
-    if (deleteTarget) {
-      setEntries((prev) => prev.filter((e) => e.id !== deleteTarget.id));
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await removeFuelEntry(deleteTarget.id);
+      toast.success("Plein supprimé");
       setDeleteTarget(null);
+    } catch (err) {
+      const message = err instanceof ApiRequestError ? err.detail : (err as Error).message;
+      toast.error(message || "Erreur lors de la suppression du plein");
+    } finally {
+      setDeleting(false);
     }
   };
 
   // ─── Stats ───
   const totalLiters = entries.reduce((s, e) => s + e.liters, 0);
   const totalCost = entries.reduce((s, e) => s + e.totalCost, 0);
-  const avgPrice = entries.length > 0 ? totalCost / totalLiters : 0;
+  const avgPrice = totalLiters > 0 ? totalCost / totalLiters : 0;
 
   // Consommation par véhicule
   const consumptionByVehicle = vehicles.map((v) => {
     const vEntries = entries.filter((e) => e.vehicleId === v.id).sort((a, b) => a.mileage - b.mileage);
-    let consumption = null;
+    let consumption: number | null = null;
     if (vEntries.length >= 2) {
       const last = vEntries[vEntries.length - 1];
       const prev = vEntries[vEntries.length - 2];
@@ -178,6 +148,17 @@ function FuelPage() {
           <SummaryCard label="Prix moyen" value={`${avgPrice.toFixed(3)} €/L`} tint="bg-warning/15 text-warning-foreground" icon={TrendingUp} />
           <SummaryCard label="Pleins" value={entries.length} tint="bg-success/10 text-success" icon={Fuel} />
         </div>
+
+        {/* ─── Erreur de chargement ─── */}
+        {fuelError && (
+          <div className="flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span>{fuelError}</span>
+            <button onClick={() => fetchFuelEntries()} className="ml-auto underline underline-offset-2">
+              Réessayer
+            </button>
+          </div>
+        )}
 
         {/* ─── Consommation par véhicule ─── */}
         {consumptionByVehicle.length > 0 && (
@@ -236,196 +217,206 @@ function FuelPage() {
           </select>
         </div>
 
-        {/* ─── Tableau Desktop ─── */}
-        <div className="hidden sm:block overflow-hidden rounded-xl border border-border bg-card">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Véhicule</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Station</TableHead>
-                <TableHead>Litres</TableHead>
-                <TableHead>Prix/L</TableHead>
-                <TableHead>Total</TableHead>
-                <TableHead>Kilométrage</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+        {/* ─── État de chargement ─── */}
+        {fuelLoading && entries.length === 0 ? (
+          <div className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card p-12 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Chargement des pleins…
+          </div>
+        ) : (
+          <>
+            {/* ─── Tableau Desktop ─── */}
+            <div className="hidden sm:block overflow-hidden rounded-xl border border-border bg-card">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Véhicule</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Station</TableHead>
+                    <TableHead>Litres</TableHead>
+                    <TableHead>Prix/L</TableHead>
+                    <TableHead>Total</TableHead>
+                    <TableHead>Kilométrage</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {paginated.map((e) => {
+                    const v = vehicles.find((x) => x.id === e.vehicleId);
+                    return (
+                      <TableRow key={e.id}>
+                        <TableCell>
+                          {v && (
+                            <Link to="/vehicles/$id" params={{ id: v.id }} className="flex items-center gap-3">
+                              <img src={v.image} alt="" className="h-9 w-14 rounded object-cover" />
+                              <div>
+                                <p className="text-sm font-medium">{v.brand} {v.model}</p>
+                                <p className="font-mono text-xs text-muted-foreground">{v.plate}</p>
+                              </div>
+                            </Link>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <span className="inline-flex items-center gap-1.5 text-sm">
+                            <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                            {new Date(e.date).toLocaleDateString("fr-FR")}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-sm">{e.station}</TableCell>
+                        <TableCell className="text-sm">{e.liters.toFixed(1)} L</TableCell>
+                        <TableCell className="text-sm">{e.pricePerLiter.toFixed(3)} €</TableCell>
+                        <TableCell className="text-sm font-medium">{e.totalCost.toFixed(2)} €</TableCell>
+                        <TableCell className="text-sm">{e.mileage.toLocaleString("fr-FR")} km</TableCell>
+                        <TableCell>
+                          <div className="flex justify-end gap-1">
+                            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { setEditing(e); setDialogOpen(true); }}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteTarget(e)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {paginated.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
+                        Aucun plein trouvé.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* ─── Cartes Mobile ─── */}
+            <div className="sm:hidden space-y-3">
               {paginated.map((e) => {
                 const v = vehicles.find((x) => x.id === e.vehicleId);
                 return (
-                  <TableRow key={e.id}>
-                    <TableCell>
+                  <div key={e.id} className="rounded-xl border border-border bg-card p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
                       {v && (
                         <Link to="/vehicles/$id" params={{ id: v.id }} className="flex items-center gap-3">
-                          <img src={v.image} alt="" className="h-9 w-14 rounded object-cover" />
+                          <img src={v.image} alt="" className="h-10 w-16 rounded object-cover" />
                           <div>
                             <p className="text-sm font-medium">{v.brand} {v.model}</p>
                             <p className="font-mono text-xs text-muted-foreground">{v.plate}</p>
                           </div>
                         </Link>
                       )}
-                    </TableCell>
-                    <TableCell>
-                      <span className="inline-flex items-center gap-1.5 text-sm">
-                        <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
-                        {new Date(e.date).toLocaleDateString("fr-FR")}
+                      <span className={cn(
+                        "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium",
+                        e.fullTank ? "bg-success/10 text-success" : "bg-muted text-muted-foreground"
+                      )}>
+                        {e.fullTank ? "Plein" : "Partiel"}
                       </span>
-                    </TableCell>
-                    <TableCell className="text-sm">{e.station}</TableCell>
-                    <TableCell className="text-sm">{e.liters.toFixed(1)} L</TableCell>
-                    <TableCell className="text-sm">{e.pricePerLiter.toFixed(3)} €</TableCell>
-                    <TableCell className="text-sm font-medium">{e.totalCost.toFixed(2)} €</TableCell>
-                    <TableCell className="text-sm">{e.mileage.toLocaleString("fr-FR")} km</TableCell>
-                    <TableCell>
-                      <div className="flex justify-end gap-1">
-                        <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { setEditing(e); setDialogOpen(true); }}>
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteTarget(e)}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div>
+                        <p className="text-[10px] uppercase text-muted-foreground">Date</p>
+                        <p className="flex items-center gap-1">
+                          <Calendar className="h-3 w-3 text-muted-foreground" />
+                          {new Date(e.date).toLocaleDateString("fr-FR", { dateStyle: "long" })}
+                        </p>
                       </div>
-                    </TableCell>
-                  </TableRow>
+                      <div>
+                        <p className="text-[10px] uppercase text-muted-foreground">Station</p>
+                        <p>{e.station}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] uppercase text-muted-foreground">Carburant</p>
+                        <p className="flex items-center gap-1">
+                          <Droplets className="h-3 w-3 text-muted-foreground" />
+                          {e.liters.toFixed(1)} L
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] uppercase text-muted-foreground">Prix/L</p>
+                        <p>{e.pricePerLiter.toFixed(3)} €</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] uppercase text-muted-foreground">Total</p>
+                        <p className="font-medium">{e.totalCost.toFixed(2)} €</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] uppercase text-muted-foreground">Kilométrage</p>
+                        <p className="flex items-center gap-1">
+                          <Gauge className="h-3 w-3 text-muted-foreground" />
+                          {e.mileage.toLocaleString("fr-FR")} km
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2 pt-1">
+                      <Button size="sm" variant="outline" className="flex-1 gap-1" onClick={() => { setEditing(e); setDialogOpen(true); }}>
+                        <Pencil className="h-3 w-3" /> Modifier
+                      </Button>
+                      <Button size="sm" variant="destructive" className="flex-1 gap-1" onClick={() => setDeleteTarget(e)}>
+                        <Trash2 className="h-3 w-3" /> Supprimer
+                      </Button>
+                    </div>
+                  </div>
                 );
               })}
               {paginated.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
-                    Aucun plein trouvé.
-                  </TableCell>
-                </TableRow>
+                <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
+                  Aucun plein trouvé.
+                </div>
               )}
-            </TableBody>
-          </Table>
-        </div>
+            </div>
 
-        {/* ─── Cartes Mobile ─── */}
-        <div className="sm:hidden space-y-3">
-          {paginated.map((e) => {
-            const v = vehicles.find((x) => x.id === e.vehicleId);
-            return (
-              <div key={e.id} className="rounded-xl border border-border bg-card p-4 space-y-3">
-                <div className="flex items-start justify-between gap-3">
-                  {v && (
-                    <Link to="/vehicles/$id" params={{ id: v.id }} className="flex items-center gap-3">
-                      <img src={v.image} alt="" className="h-10 w-16 rounded object-cover" />
-                      <div>
-                        <p className="text-sm font-medium">{v.brand} {v.model}</p>
-                        <p className="font-mono text-xs text-muted-foreground">{v.plate}</p>
-                      </div>
-                    </Link>
+            {/* ─── Pagination ─── */}
+            {totalPages > 1 && (
+              <div className="flex flex-col items-center gap-3 py-2">
+                <p className="text-xs text-muted-foreground">
+                  Affichage {startIdx + 1}–{Math.min(startIdx + ITEMS_PER_PAGE, filtered.length)} sur {filtered.length}
+                </p>
+                <div className="hidden sm:flex items-center gap-1">
+                  <PageBtn onClick={() => goToPage(1)} disabled={safePage === 1} icon={<ChevronsLeft className="h-4 w-4" />} />
+                  <PageBtn onClick={() => goToPage(safePage - 1)} disabled={safePage === 1} icon={<ChevronLeft className="h-4 w-4" />} />
+                  {getVisiblePages().map((p, i) =>
+                    p === "..." ? (
+                      <span key={`dots-${i}`} className="px-2 text-sm text-muted-foreground">…</span>
+                    ) : (
+                      <button
+                        key={p}
+                        onClick={() => goToPage(p as number)}
+                        className={cn(
+                          "h-8 w-8 rounded-lg text-sm font-medium transition-colors",
+                          safePage === p ? "bg-primary text-primary-foreground" : "border border-input bg-background text-foreground hover:bg-muted"
+                        )}
+                      >
+                        {p}
+                      </button>
+                    )
                   )}
-                  <span className={cn(
-                    "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium",
-                    e.fullTank ? "bg-success/10 text-success" : "bg-muted text-muted-foreground"
-                  )}>
-                    {e.fullTank ? "Plein" : "Partiel"}
-                  </span>
+                  <PageBtn onClick={() => goToPage(safePage + 1)} disabled={safePage === totalPages} icon={<ChevronRight className="h-4 w-4" />} />
+                  <PageBtn onClick={() => goToPage(totalPages)} disabled={safePage === totalPages} icon={<ChevronsRight className="h-4 w-4" />} />
                 </div>
-
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div>
-                    <p className="text-[10px] uppercase text-muted-foreground">Date</p>
-                    <p className="flex items-center gap-1">
-                      <Calendar className="h-3 w-3 text-muted-foreground" />
-                      {new Date(e.date).toLocaleDateString("fr-FR", { dateStyle: "long" })}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] uppercase text-muted-foreground">Station</p>
-                    <p>{e.station}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] uppercase text-muted-foreground">Carburant</p>
-                    <p className="flex items-center gap-1">
-                      <Droplets className="h-3 w-3 text-muted-foreground" />
-                      {e.liters.toFixed(1)} L
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] uppercase text-muted-foreground">Prix/L</p>
-                    <p>{e.pricePerLiter.toFixed(3)} €</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] uppercase text-muted-foreground">Total</p>
-                    <p className="font-medium">{e.totalCost.toFixed(2)} €</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] uppercase text-muted-foreground">Kilométrage</p>
-                    <p className="flex items-center gap-1">
-                      <Gauge className="h-3 w-3 text-muted-foreground" />
-                      {e.mileage.toLocaleString("fr-FR")} km
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex gap-2 pt-1">
-                  <Button size="sm" variant="outline" className="flex-1 gap-1" onClick={() => { setEditing(e); setDialogOpen(true); }}>
-                    <Pencil className="h-3 w-3" /> Modifier
-                  </Button>
-                  <Button size="sm" variant="destructive" className="flex-1 gap-1" onClick={() => setDeleteTarget(e)}>
-                    <Trash2 className="h-3 w-3" /> Supprimer
-                  </Button>
+                <div className="flex sm:hidden items-center gap-3 w-full">
+                  <button
+                    onClick={() => goToPage(safePage - 1)}
+                    disabled={safePage === 1}
+                    className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-input bg-background px-3 py-2 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <ChevronLeft className="h-4 w-4" /> Précédent
+                  </button>
+                  <span className="text-sm font-medium">{safePage} / {totalPages}</span>
+                  <button
+                    onClick={() => goToPage(safePage + 1)}
+                    disabled={safePage === totalPages}
+                    className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-input bg-background px-3 py-2 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Suivant <ChevronRight className="h-4 w-4" />
+                  </button>
                 </div>
               </div>
-            );
-          })}
-          {paginated.length === 0 && (
-            <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
-              Aucun plein trouvé.
-            </div>
-          )}
-        </div>
-
-        {/* ─── Pagination ─── */}
-        {totalPages > 1 && (
-          <div className="flex flex-col items-center gap-3 py-2">
-            <p className="text-xs text-muted-foreground">
-              Affichage {startIdx + 1}–{Math.min(startIdx + ITEMS_PER_PAGE, filtered.length)} sur {filtered.length}
-            </p>
-            <div className="hidden sm:flex items-center gap-1">
-              <PageBtn onClick={() => goToPage(1)} disabled={safePage === 1} icon={<ChevronsLeft className="h-4 w-4" />} />
-              <PageBtn onClick={() => goToPage(safePage - 1)} disabled={safePage === 1} icon={<ChevronLeft className="h-4 w-4" />} />
-              {getVisiblePages().map((p, i) =>
-                p === "..." ? (
-                  <span key={`dots-${i}`} className="px-2 text-sm text-muted-foreground">…</span>
-                ) : (
-                  <button
-                    key={p}
-                    onClick={() => goToPage(p as number)}
-                    className={cn(
-                      "h-8 w-8 rounded-lg text-sm font-medium transition-colors",
-                      safePage === p ? "bg-primary text-primary-foreground" : "border border-input bg-background text-foreground hover:bg-muted"
-                    )}
-                  >
-                    {p}
-                  </button>
-                )
-              )}
-              <PageBtn onClick={() => goToPage(safePage + 1)} disabled={safePage === totalPages} icon={<ChevronRight className="h-4 w-4" />} />
-              <PageBtn onClick={() => goToPage(totalPages)} disabled={safePage === totalPages} icon={<ChevronsRight className="h-4 w-4" />} />
-            </div>
-            <div className="flex sm:hidden items-center gap-3 w-full">
-              <button
-                onClick={() => goToPage(safePage - 1)}
-                disabled={safePage === 1}
-                className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-input bg-background px-3 py-2 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <ChevronLeft className="h-4 w-4" /> Précédent
-              </button>
-              <span className="text-sm font-medium">{safePage} / {totalPages}</span>
-              <button
-                onClick={() => goToPage(safePage + 1)}
-                disabled={safePage === totalPages}
-                className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-input bg-background px-3 py-2 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                Suivant <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
+            )}
+          </>
         )}
       </div>
 
@@ -435,7 +426,9 @@ function FuelPage() {
           entry={editing}
           vehicles={vehicles}
           onClose={() => { setDialogOpen(false); setEditing(null); }}
-          onSave={handleSave}
+          onSubmit={(input) =>
+            editing ? editFuelEntry(editing.id, input) : addFuelEntry(input)
+          }
         />
       )}
 
@@ -449,9 +442,13 @@ function FuelPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Annuler</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              Supprimer
+            <AlertDialogCancel disabled={deleting}>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? "Suppression..." : "Supprimer"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -494,12 +491,12 @@ function FuelDialog({
   entry,
   vehicles,
   onClose,
-  onSave,
+  onSubmit,
 }: {
-  entry: FuelEntry | null;
+  entry: FuelEntryDTO | null;
   vehicles: any[];
   onClose: () => void;
-  onSave: (e: Omit<FuelEntry, "id" | "totalCost">, id?: string) => void;
+  onSubmit: (input: FuelInput) => Promise<unknown>;
 }) {
   const [vehicleId, setVehicleId] = useState(entry?.vehicleId ?? "");
   const [date, setDate] = useState(entry?.date ?? new Date().toISOString().split("T")[0]);
@@ -508,16 +505,21 @@ function FuelDialog({
   const [pricePerLiter, setPricePerLiter] = useState(entry?.pricePerLiter?.toString() ?? "");
   const [mileage, setMileage] = useState(entry?.mileage?.toString() ?? "");
   const [fullTank, setFullTank] = useState(entry?.fullTank ?? true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const totalPreview = liters && pricePerLiter
     ? (parseFloat(liters) * parseFloat(pricePerLiter)).toFixed(2)
     : "0.00";
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!vehicleId || !date || !station || !liters || !pricePerLiter || !mileage) return;
-    onSave(
-      {
+
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      await onSubmit({
         vehicleId,
         date,
         station,
@@ -525,9 +527,15 @@ function FuelDialog({
         pricePerLiter: parseFloat(pricePerLiter),
         mileage: parseInt(mileage),
         fullTank,
-      },
-      entry?.id
-    );
+      });
+      toast.success(entry ? "Plein mis à jour" : "Plein enregistré");
+      onClose();
+    } catch (err) {
+      const message = err instanceof ApiRequestError ? err.detail : (err as Error).message;
+      setError(message || "Une erreur est survenue lors de l'enregistrement.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -539,6 +547,13 @@ function FuelDialog({
             <X className="h-5 w-5" />
           </button>
         </div>
+
+        {error && (
+          <div className="mb-4 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            {error}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -606,8 +621,22 @@ function FuelDialog({
           </div>
 
           <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} className="rounded-lg border border-input bg-background px-4 py-2.5 text-sm font-medium transition-colors hover:bg-muted">Annuler</button>
-            <button type="submit" className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90">{entry ? "Enregistrer" : "Ajouter"}</button>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isSubmitting}
+              className="rounded-lg border border-input bg-background px-4 py-2.5 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-50"
+            >
+              Annuler
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-60"
+            >
+              {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+              {entry ? "Enregistrer" : "Ajouter"}
+            </button>
           </div>
         </form>
       </div>
