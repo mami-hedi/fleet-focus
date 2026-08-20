@@ -11,6 +11,8 @@ import { maintenanceService, type MaintenanceDTO, type MaintenanceInput } from "
 import { fuelService, type FuelEntryDTO, type FuelInput, type FuelListParams } from "./fuelService";
 import { incidentService, type Incident, type IncidentPayload, type IncidentListParams } from "./incidentService";
 import { alertService, type AlertDTO, type AlertListParams } from "./alertService";
+import { reservationService, type ReservationDTO, type ReservationInput, type ReservationListParams } from "./reservationService";
+import { paymentService, type PaymentDTO, type PaymentInput, type PaymentListParams, type PaymentStats } from "./paymentService";
 import { ApiRequestError } from "./api-client";
 
 interface FleetState {
@@ -70,6 +72,28 @@ interface FleetState {
   addFuelEntry: (input: FuelInput) => Promise<FuelEntryDTO>;
   editFuelEntry: (id: string, input: Partial<FuelInput>) => Promise<void>;
   removeFuelEntry: (id: string) => Promise<void>;
+
+  // ─ Réservations ─
+  reservations: ReservationDTO[];
+  reservationsLoaded: boolean;
+  reservationsLoading: boolean;
+  reservationsError: string | null;
+  fetchReservations: (params?: ReservationListParams) => Promise<void>;
+  addReservation: (input: ReservationInput) => Promise<ReservationDTO>;
+  editReservation: (id: string, input: Partial<ReservationInput>) => Promise<void>;
+  removeReservation: (id: string) => Promise<void>;
+
+  // ─ Paiements ─
+  payments: PaymentDTO[];
+  paymentsLoaded: boolean;
+  paymentsLoading: boolean;
+  paymentsError: string | null;
+  paymentStats: PaymentStats | null;
+  fetchPayments: (params?: PaymentListParams) => Promise<void>;
+  fetchPaymentStats: () => Promise<void>;
+  addPayment: (input: PaymentInput) => Promise<PaymentDTO>;
+  editPayment: (id: string, input: Partial<PaymentInput>) => Promise<void>;
+  removePayment: (id: string) => Promise<void>;
 }
 
 function nowIso() {
@@ -87,6 +111,8 @@ export const useFleetStore = create<FleetState>((set, get) => ({
   documents: [],
   incidents: [],
   fuelEntries: [],
+  reservations: [],
+  payments: [],
   history: [],
 
   alerts: [],
@@ -373,6 +399,89 @@ export const useFleetStore = create<FleetState>((set, get) => ({
     await fuelService.remove(id);
     set((s) => ({
       fuelEntries: s.fuelEntries.filter((f) => f.id !== id),
+    }));
+  },
+
+  // ─── Réservations ────────────────────────────────────────────────────
+  reservationsLoaded: false,
+  reservationsLoading: false,
+  reservationsError: null,
+
+  fetchReservations: async (params) => {
+    if (get().reservationsLoading) return;
+    set({ reservationsLoading: true, reservationsError: null });
+    try {
+      const reservations = await reservationService.list(params);
+      set({ reservations, reservationsLoaded: true, reservationsLoading: false });
+    } catch (err) {
+      set({ reservationsError: errorMessage(err), reservationsLoading: false });
+    }
+  },
+
+  addReservation: async (input) => {
+    const created = await reservationService.create(input);
+    set((s) => ({ reservations: [created, ...s.reservations] }));
+    return created;
+  },
+
+  editReservation: async (id, input) => {
+    const updated = await reservationService.update(id, input);
+    set((s) => ({
+      reservations: s.reservations.map((r) => (r.id === id ? updated : r)),
+    }));
+  },
+
+  removeReservation: async (id) => {
+    await reservationService.remove(id);
+    set((s) => ({
+      reservations: s.reservations.filter((r) => r.id !== id),
+      payments: s.payments.filter((p) => p.reservationId !== id),
+    }));
+  },
+
+  // ─── Paiements ─────────────────────────────────────────────────────
+  paymentsLoaded: false,
+  paymentsLoading: false,
+  paymentsError: null,
+  paymentStats: null,
+
+  fetchPayments: async (params) => {
+    if (get().paymentsLoading) return;
+    set({ paymentsLoading: true, paymentsError: null });
+    try {
+      const payments = await paymentService.list(params);
+      set({ payments, paymentsLoaded: true, paymentsLoading: false });
+    } catch (err) {
+      set({ paymentsError: errorMessage(err), paymentsLoading: false });
+    }
+  },
+
+  fetchPaymentStats: async () => {
+    try {
+      const paymentStats = await paymentService.getStats();
+      set({ paymentStats });
+    } catch {
+      // stats non bloquantes
+    }
+  },
+
+  addPayment: async (input) => {
+    const created = await paymentService.create(input);
+    set((s) => ({ payments: [created, ...s.payments] }));
+    return created;
+  },
+
+  editPayment: async (id, input) => {
+    const updated = await paymentService.update(id, input);
+    set((s) => ({
+      payments: s.payments.map((p) => (p.id === id ? updated : p)),
+    }));
+  },
+
+  removePayment: async (id) => {
+    await paymentService.remove(id);
+    set((s) => ({
+      payments: s.payments.filter((p) => p.id !== id),
     }));
   },
 }));

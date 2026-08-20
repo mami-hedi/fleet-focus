@@ -1,10 +1,11 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   Plus, Search, Car, Calendar, Clock, User, MapPin,
   CheckCircle2, XCircle, AlertCircle, ChevronLeft, ChevronRight,
   ChevronsLeft, ChevronsRight, X, Pencil, Trash2, ArrowRight
 } from "lucide-react";
+import { toast } from "sonner";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,7 +34,7 @@ type ReservationType = "transfer" | "day_trip" | "multi_day" | "airport";
 interface Reservation {
   id: string;
   vehicleId: string;
-  driverId?: string;
+  driverId?: string | null;
   type: ReservationType;
   status: ReservationStatus;
   startDate: string;
@@ -44,8 +45,9 @@ interface Reservation {
   dropoffLocation: string;
   clientName: string;
   clientPhone: string;
-  notes?: string;
-  createdAt: string;
+  notes?: string | null;
+  createdAt?: string;
+  Vehicle?: { id: string; brand: string; model: string; plate: string; status: string };
 }
 
 const ITEMS_PER_PAGE = 10;
@@ -74,77 +76,18 @@ const statusConfig: Record<ReservationStatus, { cls: string; icon: React.Element
   cancelled: { cls: "bg-destructive/10 text-destructive border-destructive/30", icon: XCircle },
 };
 
-// ─── Mock data ───
-const initialReservations: Reservation[] = [
-  {
-    id: "r1",
-    vehicleId: "v1",
-    driverId: "d1",
-    type: "airport",
-    status: "confirmed",
-    startDate: "2026-07-15",
-    startTime: "08:00",
-    endDate: "2026-07-15",
-    endTime: "10:00",
-    pickupLocation: "Hôtel Carlton, Tunis",
-    dropoffLocation: "Aéroport Tunis-Carthage",
-    clientName: "Jean Dupont",
-    clientPhone: "+33 6 12 34 56 78",
-    notes: "Vol TU 215, terminal 2",
-    createdAt: "2026-07-14T10:00:00",
-  },
-  {
-    id: "r2",
-    vehicleId: "v1",
-    driverId: "d2",
-    type: "transfer",
-    status: "pending",
-    startDate: "2026-07-15",
-    startTime: "14:00",
-    endDate: "2026-07-15",
-    endTime: "15:30",
-    pickupLocation: "Aéroport Tunis-Carthage",
-    dropoffLocation: "Sidi Bou Saïd",
-    clientName: "Marie Martin",
-    clientPhone: "+33 7 23 45 67 89",
-    createdAt: "2026-07-14T11:30:00",
-  },
-  {
-    id: "r3",
-    vehicleId: "v2",
-    type: "day_trip",
-    status: "in_progress",
-    startDate: "2026-07-14",
-    startTime: "09:00",
-    endDate: "2026-07-14",
-    endTime: "18:00",
-    pickupLocation: "Hôtel Laico",
-    dropoffLocation: "Hôtel Laico",
-    clientName: "Groupe Voyages Evasion",
-    clientPhone: "+216 71 234 567",
-    notes: "Circuit Carthage + Sidi Bou Saïd",
-    createdAt: "2026-07-10T14:00:00",
-  },
-  {
-    id: "r4",
-    vehicleId: "v3",
-    type: "multi_day",
-    status: "confirmed",
-    startDate: "2026-07-16",
-    startTime: "08:00",
-    endDate: "2026-07-18",
-    endTime: "20:00",
-    pickupLocation: "Tunis centre",
-    dropoffLocation: "Djerba",
-    clientName: "Famille Alves",
-    clientPhone: "+351 912 345 678",
-    notes: "3 jours, hébergement inclus",
-    createdAt: "2026-07-12T09:00:00",
-  },
-];
-
 function ReservationsPage() {
-  const [reservations, setReservations] = useState<Reservation[]>(initialReservations);
+  const {
+    reservations,
+    reservationsLoading,
+    reservationsError,
+    fetchReservations,
+    addReservation,
+    editReservation,
+    removeReservation,
+    vehicles,
+  } = useFleetStore();
+
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<ReservationStatus | "all">("all");
   const [dateFilter, setDateFilter] = useState("");
@@ -153,7 +96,9 @@ function ReservationsPage() {
   const [deleteTarget, setDeleteTarget] = useState<Reservation | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
 
-  const vehicles = useFleetStore((s) => s.vehicles);
+  useEffect(() => {
+    fetchReservations();
+  }, [fetchReservations]);
 
   // ─── Filtrage ───
   const filtered = reservations.filter((r) => {
@@ -161,7 +106,7 @@ function ReservationsPage() {
     const matchDate = !dateFilter || r.startDate === dateFilter || r.endDate === dateFilter;
     if (!query) return matchStatus && matchDate;
     const q = query.toLowerCase();
-    const v = vehicles.find((x) => x.id === r.vehicleId);
+    const v = vehicles.find((x) => x.id === r.vehicleId) || r.Vehicle;
     return (
       matchStatus &&
       matchDate &&
@@ -190,20 +135,31 @@ function ReservationsPage() {
   };
 
   // ─── Actions ───
-  const handleSave = (res: Omit<Reservation, "id" | "createdAt">, id?: string) => {
-    if (id) {
-      setReservations((prev) => prev.map((r) => (r.id === id ? { ...res, id, createdAt: prev.find((x) => x.id === id)?.createdAt || new Date().toISOString() } : r)));
-    } else {
-      setReservations((prev) => [{ ...res, id: `r${Date.now()}`, createdAt: new Date().toISOString() }, ...prev]);
+  const handleSave = async (res: Omit<Reservation, "id" | "createdAt" | "Vehicle">, id?: string) => {
+    try {
+      if (id) {
+        await editReservation(id, res);
+        toast.success("Réservation modifiée avec succès.");
+      } else {
+        await addReservation(res);
+        toast.success("Réservation créée avec succès.");
+      }
+      setDialogOpen(false);
+      setEditing(null);
+    } catch (err) {
+      toast.error(id ? "Erreur lors de la modification." : "Erreur lors de la création.");
     }
-    setDialogOpen(false);
-    setEditing(null);
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (deleteTarget) {
-      setReservations((prev) => prev.filter((r) => r.id !== deleteTarget.id));
-      setDeleteTarget(null);
+      try {
+        await removeReservation(deleteTarget.id);
+        toast.success("Réservation supprimée.");
+        setDeleteTarget(null);
+      } catch (err) {
+        toast.error("Erreur lors de la suppression.");
+      }
     }
   };
 
@@ -260,6 +216,12 @@ function ReservationsPage() {
       }
     >
       <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 sm:px-6 lg:px-8">
+
+        {reservationsError && (
+          <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+            Une erreur est survenue lors du chargement des réservations : {reservationsError}
+          </div>
+        )}
 
         {/* ─── Alertes conflits ─── */}
         {conflicts.length > 0 && (
@@ -330,185 +292,262 @@ function ReservationsPage() {
         </div>
 
         {/* ─── Tableau Desktop ─── */}
-        <div className="hidden sm:block overflow-hidden rounded-xl border border-border bg-card">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Véhicule</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Client</TableHead>
-                <TableHead>Date & Heure</TableHead>
-                <TableHead>Trajet</TableHead>
-                <TableHead>Statut</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {paginated.map((r) => {
-                const v = vehicles.find((x) => x.id === r.vehicleId);
-                const st = statusConfig[r.status];
-                const StatusIcon = st.icon;
-                const isMultiDay = r.startDate !== r.endDate;
+        {reservationsLoading ? (
+          <div className="hidden sm:block overflow-hidden rounded-xl border border-border bg-card">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Véhicule</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Client</TableHead>
+                  <TableHead>Date & Heure</TableHead>
+                  <TableHead>Trajet</TableHead>
+                  <TableHead>Statut</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <TableRow key={i} className="animate-pulse">
+                    <TableCell><div className="h-10 bg-muted rounded w-24"></div></TableCell>
+                    <TableCell><div className="h-4 bg-muted rounded w-16"></div></TableCell>
+                    <TableCell><div className="h-8 bg-muted rounded w-24"></div></TableCell>
+                    <TableCell><div className="h-8 bg-muted rounded w-32"></div></TableCell>
+                    <TableCell><div className="h-8 bg-muted rounded w-32"></div></TableCell>
+                    <TableCell><div className="h-6 bg-muted rounded w-20"></div></TableCell>
+                    <TableCell><div className="h-8 bg-muted rounded w-16 ml-auto"></div></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        ) : (
+          <div className="hidden sm:block overflow-hidden rounded-xl border border-border bg-card">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Véhicule</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Client</TableHead>
+                  <TableHead>Date & Heure</TableHead>
+                  <TableHead>Trajet</TableHead>
+                  <TableHead>Statut</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {paginated.map((r) => {
+                  const v = vehicles.find((x) => x.id === r.vehicleId) || r.Vehicle;
+                  const st = statusConfig[r.status];
+                  const StatusIcon = st.icon;
+                  const isMultiDay = r.startDate !== r.endDate;
 
-                return (
-                  <TableRow key={r.id}>
-                    <TableCell>
-                      {v && (
-                        <Link to="/vehicles/$id" params={{ id: v.id }} className="flex items-center gap-3">
-                          <img src={v.image} alt="" className="h-9 w-14 rounded object-cover" />
-                          <div>
-                            <p className="text-sm font-medium">{v.brand} {v.model}</p>
-                            <p className="font-mono text-xs text-muted-foreground">{v.plate}</p>
-                          </div>
-                        </Link>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-sm">{typeLabels[r.type]}</span>
-                    </TableCell>
-                    <TableCell>
-                      <div>
-                        <p className="text-sm font-medium">{r.clientName}</p>
-                        <p className="text-xs text-muted-foreground">{r.clientPhone}</p>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="text-sm">
-                        <p className="flex items-center gap-1">
-                          <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
-                          {isMultiDay
-                            ? `${new Date(r.startDate).toLocaleDateString("fr-FR")} → ${new Date(r.endDate).toLocaleDateString("fr-FR")}`
-                            : new Date(r.startDate).toLocaleDateString("fr-FR", { dateStyle: "long" })}
-                        </p>
-                        <p className="flex items-center gap-1 text-muted-foreground">
-                          <Clock className="h-3.5 w-3.5" />
-                          {r.startTime} → {r.endTime}
-                        </p>
-                      </div>
-                    </TableCell>
-                    <TableCell className="max-w-[200px]">
-                      <div className="text-sm">
-                        <p className="truncate">{r.pickupLocation}</p>
-                        <p className="flex items-center gap-1 text-muted-foreground">
-                          <ArrowRight className="h-3 w-3" />
-                          <span className="truncate">{r.dropoffLocation}</span>
-                        </p>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <span className={cn("inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium", st.cls)}>
-                        <StatusIcon className="h-3 w-3" />
-                        {statusLabels[r.status]}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex justify-end gap-1">
-                        <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { setEditing(r); setDialogOpen(true); }}>
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteTarget(r)}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
+                  return (
+                    <TableRow key={r.id}>
+                      <TableCell>
+                        {v && (
+                          <Link to="/vehicles/$id" params={{ id: v.id }} className="flex items-center gap-3">
+                            {('image' in v && v.image) && <img src={v.image as string} alt="" className="h-9 w-14 rounded object-cover" />}
+                            <div>
+                              <p className="text-sm font-medium">{v.brand} {v.model}</p>
+                              <p className="font-mono text-xs text-muted-foreground">{v.plate}</p>
+                            </div>
+                          </Link>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-sm">{typeLabels[r.type]}</span>
+                      </TableCell>
+                      <TableCell>
+                        <div>
+                          <p className="text-sm font-medium">{r.clientName}</p>
+                          <p className="text-xs text-muted-foreground">{r.clientPhone}</p>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm">
+                          <p className="flex items-center gap-1">
+                            <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                            {isMultiDay
+                              ? `${new Date(r.startDate).toLocaleDateString("fr-FR")} → ${new Date(r.endDate).toLocaleDateString("fr-FR")}`
+                              : new Date(r.startDate).toLocaleDateString("fr-FR", { dateStyle: "long" })}
+                          </p>
+                          <p className="flex items-center gap-1 text-muted-foreground">
+                            <Clock className="h-3.5 w-3.5" />
+                            {r.startTime} → {r.endTime}
+                          </p>
+                        </div>
+                      </TableCell>
+                      <TableCell className="max-w-[200px]">
+                        <div className="text-sm">
+                          <p className="truncate">{r.pickupLocation}</p>
+                          <p className="flex items-center gap-1 text-muted-foreground">
+                            <ArrowRight className="h-3 w-3" />
+                            <span className="truncate">{r.dropoffLocation}</span>
+                          </p>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="relative inline-block">
+                          <select
+                            className={cn("appearance-none inline-flex items-center gap-1 rounded-full border pl-7 pr-6 py-0.5 text-xs font-medium focus:outline-none cursor-pointer hover:opacity-80 transition-opacity", st.cls)}
+                            value={r.status}
+                            onChange={async (e) => {
+                              const newStatus = e.target.value as ReservationStatus;
+                              try {
+                                await editReservation(r.id, { status: newStatus });
+                                toast.success("Statut mis à jour");
+                              } catch (err) {
+                                toast.error("Erreur lors de la mise à jour");
+                              }
+                            }}
+                          >
+                            {Object.entries(statusLabels).map(([val, label]) => (
+                              <option key={val} value={val} className="text-foreground bg-background">{label}</option>
+                            ))}
+                          </select>
+                          <StatusIcon className="h-3 w-3 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          <ChevronRight className="h-3 w-3 absolute right-1.5 top-1/2 -translate-y-1/2 rotate-90 pointer-events-none opacity-50" />
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex justify-end gap-1">
+                          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { setEditing(r); setDialogOpen(true); }}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteTarget(r)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+                {paginated.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
+                      Aucune réservation trouvée.
                     </TableCell>
                   </TableRow>
-                );
-              })}
-              {paginated.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
-                    Aucune réservation trouvée.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        )}
 
         {/* ─── Cartes Mobile ─── */}
-        <div className="sm:hidden space-y-3">
-          {paginated.map((r) => {
-            const v = vehicles.find((x) => x.id === r.vehicleId);
-            const st = statusConfig[r.status];
-            const StatusIcon = st.icon;
-            const isMultiDay = r.startDate !== r.endDate;
-
-            return (
-              <div key={r.id} className="rounded-xl border border-border bg-card p-4 space-y-3">
-                <div className="flex items-start justify-between gap-3">
-                  {v && (
-                    <Link to="/vehicles/$id" params={{ id: v.id }} className="flex items-center gap-3">
-                      <img src={v.image} alt="" className="h-10 w-16 rounded object-cover" />
-                      <div>
-                        <p className="text-sm font-medium">{v.brand} {v.model}</p>
-                        <p className="font-mono text-xs text-muted-foreground">{v.plate}</p>
-                      </div>
-                    </Link>
-                  )}
-                  <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium", st.cls)}>
-                    <StatusIcon className="h-3 w-3 inline mr-0.5" />
-                    {statusLabels[r.status]}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div>
-                    <p className="text-[10px] uppercase text-muted-foreground">Type</p>
-                    <p>{typeLabels[r.type]}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] uppercase text-muted-foreground">Client</p>
-                    <p className="font-medium">{r.clientName}</p>
-                  </div>
-                  <div className="col-span-2">
-                    <p className="text-[10px] uppercase text-muted-foreground">Date</p>
-                    <p className="flex items-center gap-1">
-                      <Calendar className="h-3 w-3 text-muted-foreground" />
-                      {isMultiDay
-                        ? `${new Date(r.startDate).toLocaleDateString("fr-FR")} → ${new Date(r.endDate).toLocaleDateString("fr-FR")}`
-                        : new Date(r.startDate).toLocaleDateString("fr-FR", { dateStyle: "long" })}
-                    </p>
-                    <p className="flex items-center gap-1 text-muted-foreground">
-                      <Clock className="h-3 w-3" />
-                      {r.startTime} → {r.endTime}
-                    </p>
-                  </div>
-                  <div className="col-span-2">
-                    <p className="text-[10px] uppercase text-muted-foreground">Trajet</p>
-                    <p className="flex items-center gap-1">
-                      <MapPin className="h-3 w-3 text-muted-foreground shrink-0" />
-                      <span className="truncate">{r.pickupLocation}</span>
-                    </p>
-                    <p className="flex items-center gap-1">
-                      <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />
-                      <span className="truncate">{r.dropoffLocation}</span>
-                    </p>
-                  </div>
-                  {r.notes && (
-                    <div className="col-span-2">
-                      <p className="text-[10px] uppercase text-muted-foreground">Notes</p>
-                      <p className="text-xs text-muted-foreground">{r.notes}</p>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex gap-2 pt-1">
-                  <Button size="sm" variant="outline" className="flex-1 gap-1" onClick={() => { setEditing(r); setDialogOpen(true); }}>
-                    <Pencil className="h-3 w-3" /> Modifier
-                  </Button>
-                  <Button size="sm" variant="destructive" className="flex-1 gap-1" onClick={() => setDeleteTarget(r)}>
-                    <Trash2 className="h-3 w-3" /> Supprimer
-                  </Button>
-                </div>
+        {reservationsLoading ? (
+          <div className="sm:hidden space-y-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-48 rounded-xl border border-border bg-card p-4 animate-pulse space-y-4">
+                <div className="h-4 bg-muted rounded w-1/3" />
+                <div className="h-20 bg-muted rounded w-full" />
+                <div className="h-8 bg-muted rounded w-full" />
               </div>
-            );
-          })}
-          {paginated.length === 0 && (
-            <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
-              Aucune réservation trouvée.
-            </div>
-          )}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="sm:hidden space-y-3">
+            {paginated.map((r) => {
+              const v = vehicles.find((x) => x.id === r.vehicleId) || r.Vehicle;
+              const st = statusConfig[r.status];
+              const StatusIcon = st.icon;
+              const isMultiDay = r.startDate !== r.endDate;
+
+              return (
+                <div key={r.id} className="rounded-xl border border-border bg-card p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    {v && (
+                      <Link to="/vehicles/$id" params={{ id: v.id }} className="flex items-center gap-3">
+                        {('image' in v && v.image) && <img src={v.image as string} alt="" className="h-10 w-16 rounded object-cover" />}
+                        <div>
+                          <p className="text-sm font-medium">{v.brand} {v.model}</p>
+                          <p className="font-mono text-xs text-muted-foreground">{v.plate}</p>
+                        </div>
+                      </Link>
+                    )}
+                    <div className="relative inline-block shrink-0">
+                      <select
+                        className={cn("appearance-none inline-flex items-center gap-1 rounded-full border pl-6 pr-5 py-0.5 text-[10px] font-medium focus:outline-none cursor-pointer", st.cls)}
+                        value={r.status}
+                        onChange={async (e) => {
+                          const newStatus = e.target.value as ReservationStatus;
+                          try {
+                            await editReservation(r.id, { status: newStatus });
+                            toast.success("Statut mis à jour");
+                          } catch (err) {
+                            toast.error("Erreur lors de la mise à jour");
+                          }
+                        }}
+                      >
+                        {Object.entries(statusLabels).map(([val, label]) => (
+                          <option key={val} value={val} className="text-foreground bg-background">{label}</option>
+                        ))}
+                      </select>
+                      <StatusIcon className="h-2.5 w-2.5 absolute left-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <ChevronRight className="h-2.5 w-2.5 absolute right-1 top-1/2 -translate-y-1/2 rotate-90 pointer-events-none opacity-50" />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <p className="text-[10px] uppercase text-muted-foreground">Type</p>
+                      <p>{typeLabels[r.type]}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase text-muted-foreground">Client</p>
+                      <p className="font-medium">{r.clientName}</p>
+                    </div>
+                    <div className="col-span-2">
+                      <p className="text-[10px] uppercase text-muted-foreground">Date</p>
+                      <p className="flex items-center gap-1">
+                        <Calendar className="h-3 w-3 text-muted-foreground" />
+                        {isMultiDay
+                          ? `${new Date(r.startDate).toLocaleDateString("fr-FR")} → ${new Date(r.endDate).toLocaleDateString("fr-FR")}`
+                          : new Date(r.startDate).toLocaleDateString("fr-FR", { dateStyle: "long" })}
+                      </p>
+                      <p className="flex items-center gap-1 text-muted-foreground">
+                        <Clock className="h-3 w-3" />
+                        {r.startTime} → {r.endTime}
+                      </p>
+                    </div>
+                    <div className="col-span-2">
+                      <p className="text-[10px] uppercase text-muted-foreground">Trajet</p>
+                      <p className="flex items-center gap-1">
+                        <MapPin className="h-3 w-3 text-muted-foreground shrink-0" />
+                        <span className="truncate">{r.pickupLocation}</span>
+                      </p>
+                      <p className="flex items-center gap-1">
+                        <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />
+                        <span className="truncate">{r.dropoffLocation}</span>
+                      </p>
+                    </div>
+                    {r.notes && (
+                      <div className="col-span-2">
+                        <p className="text-[10px] uppercase text-muted-foreground">Notes</p>
+                        <p className="text-xs text-muted-foreground">{r.notes}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2 pt-1">
+                    <Button size="sm" variant="outline" className="flex-1 gap-1" onClick={() => { setEditing(r); setDialogOpen(true); }}>
+                      <Pencil className="h-3 w-3" /> Modifier
+                    </Button>
+                    <Button size="sm" variant="destructive" className="flex-1 gap-1" onClick={() => setDeleteTarget(r)}>
+                      <Trash2 className="h-3 w-3" /> Supprimer
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+            {(!reservationsLoading && paginated.length === 0) && (
+              <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
+                Aucune réservation trouvée.
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ─── Pagination ─── */}
         {totalPages > 1 && (
@@ -632,7 +671,7 @@ function ReservationDialog({
   vehicles: any[];
   existingReservations: Reservation[];
   onClose: () => void;
-  onSave: (r: Omit<Reservation, "id" | "createdAt">, id?: string) => void;
+  onSave: (r: Omit<Reservation, "id" | "createdAt" | "Vehicle">, id?: string) => Promise<void>;
 }) {
   const [vehicleId, setVehicleId] = useState(reservation?.vehicleId ?? "");
   const [type, setType] = useState<ReservationType>(reservation?.type ?? "transfer");
@@ -647,6 +686,7 @@ function ReservationDialog({
   const [clientPhone, setClientPhone] = useState(reservation?.clientPhone ?? "");
   const [notes, setNotes] = useState(reservation?.notes ?? "");
   const [conflictWarning, setConflictWarning] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const checkConflict = (vId: string, sDate: string, sTime: string, eDate: string, eTime: string, excludeId?: string) => {
     const newStart = new Date(`${sDate}T${sTime}`).getTime();
@@ -673,10 +713,11 @@ function ReservationDialog({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!vehicleId || !startDate || !startTime || !endDate || !endTime || !pickupLocation || !dropoffLocation || !clientName) return;
-    onSave(
+    setIsSubmitting(true);
+    await onSave(
       {
         vehicleId,
         type,
@@ -693,6 +734,7 @@ function ReservationDialog({
       },
       reservation?.id
     );
+    setIsSubmitting(false);
   };
 
   return (
@@ -700,7 +742,7 @@ function ReservationDialog({
       <div className="w-full max-w-lg rounded-t-2xl sm:rounded-2xl border border-border bg-card p-4 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-lg font-semibold">{reservation ? "Modifier la réservation" : "Nouvelle réservation"}</h2>
-          <button onClick={onClose} className="rounded-lg p-2 text-muted-foreground hover:bg-muted transition-colors">
+          <button onClick={onClose} disabled={isSubmitting} className="rounded-lg p-2 text-muted-foreground hover:bg-muted transition-colors disabled:opacity-50">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -716,6 +758,7 @@ function ReservationDialog({
                 checkConflict(e.target.value, startDate, startTime, endDate, endTime, reservation?.id);
               }}
               required
+              disabled={isSubmitting}
               className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             >
               <option value="">Sélectionner un véhicule</option>
@@ -732,6 +775,7 @@ function ReservationDialog({
               <select
                 value={type}
                 onChange={(e) => setType(e.target.value as ReservationType)}
+                disabled={isSubmitting}
                 className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               >
                 <option value="transfer">Transfert</option>
@@ -745,6 +789,7 @@ function ReservationDialog({
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value as ReservationStatus)}
+                disabled={isSubmitting}
                 className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               >
                 <option value="pending">En attente</option>
@@ -768,6 +813,7 @@ function ReservationDialog({
                   checkConflict(vehicleId, e.target.value, startTime, endDate, endTime, reservation?.id);
                 }}
                 required
+                disabled={isSubmitting}
                 className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
@@ -781,6 +827,7 @@ function ReservationDialog({
                   checkConflict(vehicleId, startDate, e.target.value, endDate, endTime, reservation?.id);
                 }}
                 required
+                disabled={isSubmitting}
                 className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
@@ -797,6 +844,7 @@ function ReservationDialog({
                   checkConflict(vehicleId, startDate, startTime, e.target.value, endTime, reservation?.id);
                 }}
                 required
+                disabled={isSubmitting}
                 className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
@@ -810,6 +858,7 @@ function ReservationDialog({
                   checkConflict(vehicleId, startDate, startTime, endDate, e.target.value, reservation?.id);
                 }}
                 required
+                disabled={isSubmitting}
                 className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
@@ -825,35 +874,35 @@ function ReservationDialog({
           {/* Trajet */}
           <div>
             <label className="block text-sm font-medium mb-1.5">Lieu de prise en charge *</label>
-            <input value={pickupLocation} onChange={(e) => setPickupLocation(e.target.value)} required placeholder="Ex: Hôtel Carlton, Tunis" className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+            <input disabled={isSubmitting} value={pickupLocation} onChange={(e) => setPickupLocation(e.target.value)} required placeholder="Ex: Hôtel Carlton, Tunis" className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
           </div>
           <div>
             <label className="block text-sm font-medium mb-1.5">Lieu de destination *</label>
-            <input value={dropoffLocation} onChange={(e) => setDropoffLocation(e.target.value)} required placeholder="Ex: Aéroport Tunis-Carthage" className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+            <input disabled={isSubmitting} value={dropoffLocation} onChange={(e) => setDropoffLocation(e.target.value)} required placeholder="Ex: Aéroport Tunis-Carthage" className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
           </div>
 
           {/* Client */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium mb-1.5">Client *</label>
-              <input value={clientName} onChange={(e) => setClientName(e.target.value)} required placeholder="Nom du client" className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              <input disabled={isSubmitting} value={clientName} onChange={(e) => setClientName(e.target.value)} required placeholder="Nom du client" className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1.5">Téléphone</label>
-              <input value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} placeholder="+216 XX XXX XXX" className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              <input disabled={isSubmitting} value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} placeholder="+216 XX XXX XXX" className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
             </div>
           </div>
 
           {/* Notes */}
           <div>
             <label className="block text-sm font-medium mb-1.5">Notes</label>
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Vol, terminal, demandes spéciales..." className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none" />
+            <textarea disabled={isSubmitting} value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Vol, terminal, demandes spéciales..." className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none" />
           </div>
 
           {/* Boutons */}
           <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} className="rounded-lg border border-input bg-background px-4 py-2.5 text-sm font-medium transition-colors hover:bg-muted">Annuler</button>
-            <button type="submit" className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90">{reservation ? "Enregistrer" : "Réserver"}</button>
+            <button type="button" onClick={onClose} disabled={isSubmitting} className="rounded-lg border border-input bg-background px-4 py-2.5 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-50">Annuler</button>
+            <button type="submit" disabled={isSubmitting} className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50">{reservation ? "Enregistrer" : "Réserver"}</button>
           </div>
         </form>
       </div>

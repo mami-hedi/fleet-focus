@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   ChevronLeft, ChevronRight, Calendar as CalendarIcon,
@@ -18,6 +18,11 @@ export const Route = createFileRoute("/calendar")({
 
 type ViewMode = "month" | "week" | "day";
 type EventType = "reservation" | "maintenance" | "document" | "inspection";
+
+type ReservationType = 'transfer' | 'day_trip' | 'multi_day' | 'airport';
+const typeLabels: Record<ReservationType, string> = {
+  transfer: 'Transfert', day_trip: 'Journée', multi_day: 'Plusieurs jours', airport: 'Aéroport'
+};
 
 interface CalendarEvent {
   id: string;
@@ -46,8 +51,17 @@ const eventConfig: Record<EventType, { icon: React.ElementType; label: string }>
   inspection: { icon: AlertTriangle, label: "État des lieux" },
 };
 
+// Map status to color
+const reservationColor = (status: string) => {
+  if (status === 'confirmed') return 'bg-primary';
+  if (status === 'in_progress') return 'bg-success';
+  if (status === 'completed') return 'bg-muted-foreground';
+  if (status === 'cancelled') return 'bg-destructive';
+  return 'bg-info'; // pending
+};
+
 function CalendarPage() {
-  const [currentDate, setCurrentDate] = useState(new Date(2026, 6, 14)); // Juillet 2026
+  const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>("month");
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [filterTypes, setFilterTypes] = useState<EventType[]>(["reservation", "maintenance", "document", "inspection"]);
@@ -57,19 +71,30 @@ function CalendarPage() {
   const maintenances = useFleetStore((s) => s.maintenances);
   const documents = useFleetStore((s) => s.documents);
   const inspections = useFleetStore((s) => s.inspections);
+  const reservations = useFleetStore((s) => s.reservations);
+
+  const fetchReservations = useFleetStore((s) => s.fetchReservations);
+  const reservationsLoaded = useFleetStore((s) => s.reservationsLoaded);
+
+  useEffect(() => { 
+    if (!reservationsLoaded) fetchReservations(); 
+  }, [reservationsLoaded, fetchReservations]);
 
   // ─── Générer les événements ───
   const events: CalendarEvent[] = [
-    // Réservations (mock)
-    ...[
-      { id: "r1", vehicleId: "v1", date: "2026-07-15", time: "08:00", endTime: "10:00", title: "Transfert aéroport — Jean Dupont", type: "reservation" as EventType, color: "bg-primary" },
-      { id: "r2", vehicleId: "v1", date: "2026-07-15", time: "14:00", endTime: "15:30", title: "Transfert — Marie Martin", type: "reservation" as EventType, color: "bg-primary" },
-      { id: "r3", vehicleId: "v2", date: "2026-07-14", time: "09:00", endTime: "18:00", title: "Circuit journée — Groupe Evasion", type: "reservation" as EventType, color: "bg-info" },
-      { id: "r4", vehicleId: "v3", date: "2026-07-16", endDate: "2026-07-18", title: "Voyage Djerba — Famille Alves", type: "reservation" as EventType, color: "bg-success" },
-      { id: "r5", vehicleId: "v2", date: "2026-07-20", time: "10:00", endTime: "12:00", title: "Transfert hôtel — M. Ben Salah", type: "reservation" as EventType, color: "bg-primary" },
-      { id: "r6", vehicleId: "v1", date: "2026-07-22", time: "07:00", endTime: "09:00", title: "Aéroport — Mme Dubois", type: "reservation" as EventType, color: "bg-primary" },
-      { id: "r7", vehicleId: "v4", date: "2026-07-25", time: "08:00", endTime: "20:00", title: "Excursion désert — Groupe 12 pers.", type: "reservation" as EventType, color: "bg-warning" },
-    ],
+    // Réservations
+    ...reservations.map((r) => ({
+      id: `r-${r.id}`,
+      type: 'reservation' as EventType,
+      title: `${r.clientName} — ${typeLabels[r.type as ReservationType] ?? r.type}`,
+      date: r.startDate,
+      endDate: r.startDate !== r.endDate ? r.endDate : undefined,
+      time: r.startTime,
+      endTime: r.endTime,
+      vehicleId: r.vehicleId,
+      color: reservationColor(r.status),
+      details: `${r.pickupLocation} → ${r.dropoffLocation}`,
+    })),
     // Maintenances
     ...maintenances
       .filter((m) => m.status !== "completed")
@@ -496,8 +521,9 @@ function CalendarPage() {
                   </div>
                 )}
                 {selectedEvent.details && (
-                  <div className="rounded-lg bg-muted p-3 text-sm">
-                    {selectedEvent.details}
+                  <div className="flex items-start gap-2 text-sm">
+                    <MapPin className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                    <span>{selectedEvent.details}</span>
                   </div>
                 )}
               </div>

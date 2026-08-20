@@ -12,6 +12,7 @@ const DocumentItem = require("./DocumentItem");
 const HistoryEntry = require("./HistoryEntry");
 const DismissedAlert = require("./DismissedAlert");
 const Settings = require("./Settings");
+const Payment = require("./Payment");
 
 // ─── Vehicle 1-N relations ───
 Vehicle.hasMany(Reservation, { foreignKey: "vehicleId", onDelete: "CASCADE" });
@@ -45,6 +46,10 @@ Reservation.belongsTo(Driver, { foreignKey: "driverId" });
 Driver.hasMany(Incident, { foreignKey: "driverId", onDelete: "SET NULL" });
 Incident.belongsTo(Driver, { foreignKey: "driverId" });
 
+// ─── Reservation 1-N Payment ───
+Reservation.hasMany(Payment, { foreignKey: "reservationId", onDelete: "CASCADE" });
+Payment.belongsTo(Reservation, { foreignKey: "reservationId" });
+
 // ─── User relations ───
 User.hasMany(HistoryEntry, { foreignKey: "userId", onDelete: "SET NULL" });
 HistoryEntry.belongsTo(User, { foreignKey: "userId" });
@@ -63,4 +68,5 @@ module.exports = {
   HistoryEntry,
   DismissedAlert,
   Settings,
+  Payment,
 };

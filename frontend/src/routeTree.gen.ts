@@ -22,6 +22,7 @@ import { Route as DocumentsRouteImport } from './routes/documents'
 import { Route as CalendarRouteImport } from './routes/calendar'
 import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as ActivityRouteImport } from './routes/activity'
+import { Route as PaymentsRouteImport } from './routes/payments'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as VehiclesIndexRouteImport } from './routes/vehicles.index'
 import { Route as VehiclesIdRouteImport } from './routes/vehicles.$id'
@@ -92,6 +93,11 @@ const ActivityRoute = ActivityRouteImport.update({
   path: '/activity',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PaymentsRoute = PaymentsRouteImport.update({
+  id: '/payments',
+  path: '/payments',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -124,6 +130,7 @@ export interface FileRoutesByFullPath {
   '/incidents': typeof IncidentsRoute
   '/inspections': typeof InspectionsRouteWithChildren
   '/maintenance': typeof MaintenanceRoute
+  '/payments': typeof PaymentsRoute
   '/reservations': typeof ReservationsRoute
   '/settings': typeof SettingsRoute
   '/stats': typeof StatsRoute
@@ -143,6 +150,7 @@ export interface FileRoutesByTo {
   '/incidents': typeof IncidentsRoute
   '/inspections': typeof InspectionsRouteWithChildren
   '/maintenance': typeof MaintenanceRoute
+  '/payments': typeof PaymentsRoute
   '/reservations': typeof ReservationsRoute
   '/settings': typeof SettingsRoute
   '/stats': typeof StatsRoute
@@ -162,6 +170,7 @@ export interface FileRoutesById {
   '/incidents': typeof IncidentsRoute
   '/inspections': typeof InspectionsRouteWithChildren
   '/maintenance': typeof MaintenanceRoute
+  '/payments': typeof PaymentsRoute
   '/reservations': typeof ReservationsRoute
   '/settings': typeof SettingsRoute
   '/stats': typeof StatsRoute
@@ -183,6 +192,7 @@ export interface FileRouteTypes {
     | '/incidents'
     | '/inspections'
     | '/maintenance'
+    | '/payments'
     | '/reservations'
     | '/settings'
     | '/stats'
@@ -202,6 +212,7 @@ export interface FileRouteTypes {
     | '/incidents'
     | '/inspections'
     | '/maintenance'
+    | '/payments'
     | '/reservations'
     | '/settings'
     | '/stats'
@@ -220,6 +231,7 @@ export interface FileRouteTypes {
     | '/incidents'
     | '/inspections'
     | '/maintenance'
+    | '/payments'
     | '/reservations'
     | '/settings'
     | '/stats'
@@ -240,6 +252,7 @@ export interface RootRouteChildren {
   IncidentsRoute: typeof IncidentsRoute
   InspectionsRoute: typeof InspectionsRouteWithChildren
   MaintenanceRoute: typeof MaintenanceRoute
+  PaymentsRoute: typeof PaymentsRoute
   ReservationsRoute: typeof ReservationsRoute
   SettingsRoute: typeof SettingsRoute
   StatsRoute: typeof StatsRoute
@@ -339,6 +352,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ActivityRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/payments': {
+      id: '/payments'
+      path: '/payments'
+      fullPath: '/payments'
+      preLoaderRoute: typeof PaymentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -407,6 +427,7 @@ const rootRouteChildren: RootRouteChildren = {
   IncidentsRoute: IncidentsRoute,
   InspectionsRoute: InspectionsRouteWithChildren,
   MaintenanceRoute: MaintenanceRoute,
+  PaymentsRoute: PaymentsRoute,
   ReservationsRoute: ReservationsRoute,
   SettingsRoute: SettingsRoute,
   StatsRoute: StatsRoute,

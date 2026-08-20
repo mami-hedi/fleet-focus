@@ -2,7 +2,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, Car, ClipboardCheck, Wrench, FileText, Plus,
   CalendarDays, BarChart3, Fuel, AlertTriangle, Settings,
-  Users, BookOpen, ShieldAlert
+  Users, BookOpen, ShieldAlert, CreditCard
 } from "lucide-react";
 import {
   Sidebar,
@@ -43,6 +43,7 @@ const planningNav = [
 const analyticsNav = [
   { title: "Statistiques", url: "/stats", icon: BarChart3 },
   { title: "Carburant", url: "/fuel", icon: Fuel },
+  { title: "Paiements", url: "/payments", icon: CreditCard },
 ];
 
 // ─── Gestion des risques ───
