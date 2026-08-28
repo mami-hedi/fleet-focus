@@ -1,10 +1,5 @@
 import { create } from "zustand";
-import {
-  inspections as initialInspections,
-  type Vehicle,
-  type Inspection,
-  type HistoryEntry,
-} from "./mock-data";
+import { type Vehicle, type HistoryEntry } from "./mock-data";
 import { vehicleService, type VehicleInput } from "./vehicleService";
 import { documentService, type DocumentDTO, type DocumentInput } from "./documentService";
 import { maintenanceService, type MaintenanceDTO, type MaintenanceInput } from "./maintenanceService";
@@ -13,15 +8,25 @@ import { incidentService, type Incident, type IncidentPayload, type IncidentList
 import { alertService, type AlertDTO, type AlertListParams } from "./alertService";
 import { reservationService, type ReservationDTO, type ReservationInput, type ReservationListParams } from "./reservationService";
 import { paymentService, type PaymentDTO, type PaymentInput, type PaymentListParams, type PaymentStats } from "./paymentService";
+import {
+  inspectionService,
+  type InspectionDTO,
+  type InspectionInput,
+  type InspectionListParams,
+} from "./inspectionService";
+import { activityService, type ActivityDTO, type ActivityListParams } from "./activityService";
+import { settingsService, type SettingsDTO, type SettingsInput } from "./settingsService";
 import { ApiRequestError } from "./api-client";
 
 interface FleetState {
   vehicles: Vehicle[];
-  inspections: Inspection[];
+  inspections: InspectionDTO[];
   maintenances: MaintenanceDTO[];
   documents: DocumentDTO[];
   incidents: Incident[];
   history: HistoryEntry[];
+  historyLoading: boolean;
+  fetchVehicleHistory: (vehicleId: string) => Promise<void>;
 
   alerts: AlertDTO[];
   alertsLoaded: boolean;
@@ -62,7 +67,14 @@ interface FleetState {
   updateIncident: (id: string, input: Partial<IncidentPayload>) => Promise<void>;
   deleteIncident: (id: string) => Promise<void>;
 
-  addInspection: (i: Omit<Inspection, "id">) => void;
+  // ─ États des lieux ─
+  inspectionsLoaded: boolean;
+  inspectionsLoading: boolean;
+  inspectionsError: string | null;
+  fetchInspections: (params?: InspectionListParams) => Promise<void>;
+  addInspection: (input: InspectionInput) => Promise<InspectionDTO>;
+  editInspection: (id: string, input: Partial<InspectionInput>) => Promise<void>;
+  removeInspection: (id: string) => Promise<void>;
 
   fuelEntries: FuelEntryDTO[];
   fuelLoaded: boolean;
@@ -94,11 +106,24 @@ interface FleetState {
   addPayment: (input: PaymentInput) => Promise<PaymentDTO>;
   editPayment: (id: string, input: Partial<PaymentInput>) => Promise<void>;
   removePayment: (id: string) => Promise<void>;
+
+  // ─ Historique / Activité (backend, GET /api/activity) ─
+  activities: ActivityDTO[];
+  activitiesLoaded: boolean;
+  activitiesLoading: boolean;
+  activitiesError: string | null;
+  fetchActivities: (params?: ActivityListParams) => Promise<void>;
+
+  // ─ Paramètres (infos entreprise + notifications) ─
+  settings: SettingsDTO | null;
+  settingsLoaded: boolean;
+  settingsLoading: boolean;
+  settingsSaving: boolean;
+  settingsError: string | null;
+  fetchSettings: () => Promise<void>;
+  updateSettings: (input: SettingsInput) => Promise<void>;
 }
 
-function nowIso() {
-  return new Date().toISOString();
-}
 
 function errorMessage(err: unknown): string {
   return err instanceof ApiRequestError ? err.detail : (err as Error).message;
@@ -106,7 +131,7 @@ function errorMessage(err: unknown): string {
 
 export const useFleetStore = create<FleetState>((set, get) => ({
   vehicles: [],
-  inspections: [...initialInspections],
+  inspections: [],
   maintenances: [],
   documents: [],
   incidents: [],
@@ -114,6 +139,7 @@ export const useFleetStore = create<FleetState>((set, get) => ({
   reservations: [],
   payments: [],
   history: [],
+  historyLoading: false,
 
   alerts: [],
   alertsLoaded: false,
@@ -161,33 +187,19 @@ export const useFleetStore = create<FleetState>((set, get) => ({
 
   addVehicle: async (v) => {
     const created = await vehicleService.create(v);
-    const entry: HistoryEntry = {
-      id: `h${Date.now()}`,
-      vehicleId: created.id,
-      timestamp: nowIso(),
-      kind: "vehicle_created",
-      label: "Véhicule ajouté au parc",
-      details: `${created.brand} ${created.model} — ${created.plate}`,
-    };
     set((s) => ({
       vehicles: [created, ...s.vehicles],
-      history: [entry, ...s.history],
+      // Invalide le journal pour qu'il se recharge à la prochaine visite
+      activitiesLoaded: false,
     }));
     return created;
   },
 
   updateVehicle: async (id, patch) => {
     const updated = await vehicleService.update(id, patch);
-    const entry: HistoryEntry = {
-      id: `h${Date.now()}`,
-      vehicleId: id,
-      timestamp: nowIso(),
-      kind: "vehicle_updated",
-      label: "Fiche véhicule modifiée",
-    };
     set((s) => ({
       vehicles: s.vehicles.map((v) => (v.id === id ? updated : v)),
-      history: [entry, ...s.history],
+      activitiesLoaded: false,
     }));
   },
 
@@ -201,7 +213,33 @@ export const useFleetStore = create<FleetState>((set, get) => ({
       incidents: s.incidents.filter((i) => i.vehicleId !== id),
       fuelEntries: s.fuelEntries.filter((f) => f.vehicleId !== id),
       history: s.history.filter((h) => h.vehicleId !== id),
+      activitiesLoaded: false,
     }));
+  },
+
+  // ─── Historique véhicule ──────────────────────────────────────────
+  // Charge les entrées depuis le backend et les fusionne avec les entrées
+  // locales éventuellement déjà présentes (dédupliquées par id).
+  fetchVehicleHistory: async (vehicleId) => {
+    if (get().historyLoading) return;
+    set({ historyLoading: true });
+    try {
+      const remote = await vehicleService.getHistory(vehicleId);
+      set((s) => {
+        // On garde les entrées locales qui n'ont pas d'équivalent dans la réponse backend
+        const remoteIds = new Set(remote.map((h) => h.id));
+        const localOnly = s.history.filter(
+          (h) => h.vehicleId === vehicleId && !remoteIds.has(h.id) && h.id.startsWith("h"),
+        );
+        const otherVehicles = s.history.filter((h) => h.vehicleId !== vehicleId);
+        const merged = [...remote, ...localOnly].sort(
+          (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+        );
+        return { history: [...otherVehicles, ...merged], historyLoading: false };
+      });
+    } catch {
+      set({ historyLoading: false });
+    }
   },
 
   documentsLoaded: false,
@@ -221,17 +259,9 @@ export const useFleetStore = create<FleetState>((set, get) => ({
 
   addDocument: async (input) => {
     const created = await documentService.create(input);
-    const entry: HistoryEntry = {
-      id: `h${Date.now()}`,
-      vehicleId: created.vehicleId,
-      timestamp: nowIso(),
-      kind: "document_created",
-      label: "Document ajouté",
-      details: `${created.type} — ${created.number}`,
-    };
     set((s) => ({
       documents: [created, ...s.documents],
-      history: [entry, ...s.history],
+      activitiesLoaded: false,
     }));
     return created;
   },
@@ -269,22 +299,9 @@ export const useFleetStore = create<FleetState>((set, get) => ({
   // et renvoie donc un tableau, même pour une maintenance simple (1 seul élément).
   addMaintenance: async (input) => {
     const created = await maintenanceService.create(input);
-    const first = created[0];
-    const label =
-      !first.recurrence || first.recurrence === "none"
-        ? "Maintenance planifiée"
-        : "Maintenance récurrente planifiée";
-    const entry: HistoryEntry = {
-      id: `h${Date.now()}`,
-      vehicleId: first.vehicleId,
-      timestamp: nowIso(),
-      kind: "maintenance_scheduled",
-      label,
-      details: `${first.type} — ${first.garage} — ${new Date(first.scheduledDate).toLocaleDateString("fr-FR")}`,
-    };
     set((s) => ({
       maintenances: [...created, ...s.maintenances],
-      history: [entry, ...s.history],
+      activitiesLoaded: false,
     }));
     return created;
   },
@@ -320,17 +337,9 @@ export const useFleetStore = create<FleetState>((set, get) => ({
 
   addIncident: async (input) => {
     const created = await incidentService.create(input);
-    const entry: HistoryEntry = {
-      id: `h${Date.now()}`,
-      vehicleId: created.vehicleId,
-      timestamp: nowIso(),
-      kind: "incident_created",
-      label: "Incident déclaré",
-      details: `${created.description} — ${created.location}`,
-    };
     set((s) => ({
       incidents: [created, ...s.incidents],
-      history: [entry, ...s.history],
+      activitiesLoaded: false,
     }));
     return created;
   },
@@ -349,22 +358,53 @@ export const useFleetStore = create<FleetState>((set, get) => ({
     }));
   },
 
-  addInspection: (i) =>
-    set((s) => {
-      const id = `i${Date.now()}`;
-      const entry: HistoryEntry = {
-        id: `h${Date.now()}`,
-        vehicleId: i.vehicleId,
-        timestamp: nowIso(),
-        kind: "inspection_created",
-        label: `État des lieux (${i.type})`,
-        details: `${i.mileage.toLocaleString("fr-FR")} km — carburant ${i.fuelLevel}%`,
-      };
-      return {
-        inspections: [{ ...i, id }, ...s.inspections],
-        history: [entry, ...s.history],
-      };
-    }),
+  // ─── États des lieux ──────────────────────────────────────────────
+  inspectionsLoaded: false,
+  inspectionsLoading: false,
+  inspectionsError: null,
+
+  fetchInspections: async (params) => {
+    if (get().inspectionsLoading) return;
+    set({ inspectionsLoading: true, inspectionsError: null });
+    try {
+      const inspections = await inspectionService.list(params);
+      set({ inspections, inspectionsLoaded: true, inspectionsLoading: false });
+    } catch (err) {
+      set({ inspectionsError: errorMessage(err), inspectionsLoading: false });
+    }
+  },
+
+  addInspection: async (input) => {
+    const created = await inspectionService.create(input);
+    // L'historique est déjà journalisé côté backend (onCreate -> logActivity dans
+    // inspection.controller.js) : on invalide simplement le cache local du journal.
+    set((s) => ({
+      inspections: [created, ...s.inspections],
+      // Le backend peut avoir relevé le kilométrage du véhicule (voir inspection.controller.js) :
+      // on répercute la valeur renvoyée pour éviter d'afficher un kilométrage périmé sans refetch.
+      vehicles: created.Vehicle
+        ? s.vehicles.map((v) =>
+            v.id === created.vehicleId ? { ...v, mileage: created.Vehicle!.mileage } : v,
+          )
+        : s.vehicles,
+      activitiesLoaded: false,
+    }));
+    return created;
+  },
+
+  editInspection: async (id, input) => {
+    const updated = await inspectionService.update(id, input);
+    set((s) => ({
+      inspections: s.inspections.map((i) => (i.id === id ? updated : i)),
+    }));
+  },
+
+  removeInspection: async (id) => {
+    await inspectionService.remove(id);
+    set((s) => ({
+      inspections: s.inspections.filter((i) => i.id !== id),
+    }));
+  },
 
   // ─── Carburant ──────────────────────────────────────────────────────────
   fuelLoaded: false,
@@ -483,6 +523,54 @@ export const useFleetStore = create<FleetState>((set, get) => ({
     set((s) => ({
       payments: s.payments.filter((p) => p.id !== id),
     }));
+  },
+
+  // ─── Historique / Activité ─────────────────────────────────────────
+  activities: [],
+  activitiesLoaded: false,
+  activitiesLoading: false,
+  activitiesError: null,
+
+  fetchActivities: async (params) => {
+    if (get().activitiesLoading) return;
+    set({ activitiesLoading: true, activitiesError: null });
+    try {
+      // Limite haute par défaut : le filtrage/la pagination se font côté client
+      // dans activity.tsx, donc on récupère un historique large en un seul appel.
+      const activities = await activityService.list({ limit: 200, ...params });
+      set({ activities, activitiesLoaded: true, activitiesLoading: false });
+    } catch (err) {
+      set({ activitiesError: errorMessage(err), activitiesLoading: false });
+    }
+  },
+
+  // ─── Paramètres ─────────────────────────────────────────────────────
+  settings: null,
+  settingsLoaded: false,
+  settingsLoading: false,
+  settingsSaving: false,
+  settingsError: null,
+
+  fetchSettings: async () => {
+    if (get().settingsLoading) return;
+    set({ settingsLoading: true, settingsError: null });
+    try {
+      const settings = await settingsService.get();
+      set({ settings, settingsLoaded: true, settingsLoading: false });
+    } catch (err) {
+      set({ settingsError: errorMessage(err), settingsLoading: false });
+    }
+  },
+
+  updateSettings: async (input) => {
+    set({ settingsSaving: true, settingsError: null });
+    try {
+      const settings = await settingsService.update(input);
+      set({ settings, settingsSaving: false });
+    } catch (err) {
+      set({ settingsError: errorMessage(err), settingsSaving: false });
+      throw err;
+    }
   },
 }));
 

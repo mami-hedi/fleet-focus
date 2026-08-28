@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   Search, Calendar, Car, Wrench, FileText, ClipboardCheck,
@@ -10,6 +10,7 @@ import { AppLayout } from "@/components/AppLayout";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useFleetStore } from "@/lib/store";
+import { type ActivityKind } from "@/lib/activityservice";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/activity")({
@@ -19,26 +20,15 @@ export const Route = createFileRoute("/activity")({
 
 const ITEMS_PER_PAGE = 15;
 
-type ActivityKind =
-  | "vehicle_created"
-  | "vehicle_updated"
-  | "vehicle_deleted"
-  | "maintenance_scheduled"
-  | "inspection_created"
-  | "document_created"
-  | "driver_created"
-  | "driver_updated"
-  | "incident_created"
-  | "fuel_added";
-
-interface ActivityItem {
+// ─── Ligne d'activité normalisée (fusion historique optimiste local + backend) ───
+interface ActivityRow {
   id: string;
   timestamp: string;
   kind: ActivityKind;
   label: string;
-  details?: string;
-  vehicleId?: string;
-  user?: string;
+  details?: string | null;
+  vehicleId?: string | null;
+  user: string;
 }
 
 // ─── Configuration des icônes et couleurs ───
@@ -53,99 +43,9 @@ const kindConfig: Record<ActivityKind, { icon: React.ElementType; label: string;
   driver_updated: { icon: Pencil, label: "Conducteur", cls: "bg-info/10 text-info border-info/20" },
   incident_created: { icon: AlertTriangle, label: "Incident", cls: "bg-destructive/10 text-destructive border-destructive/20" },
   fuel_added: { icon: CheckCircle2, label: "Carburant", cls: "bg-success/10 text-success border-success/20" },
+  reservation_created: { icon: Calendar, label: "Réservation", cls: "bg-primary/10 text-primary border-primary/20" },
+  reservation_updated: { icon: Pencil, label: "Réservation", cls: "bg-info/10 text-info border-info/20" },
 };
-
-// ─── Mock data étendue ───
-const mockActivities: ActivityItem[] = [
-  {
-    id: "a1",
-    timestamp: "2026-07-14T15:30:00",
-    kind: "vehicle_created",
-    label: "Véhicule ajouté au parc",
-    details: "Peugeot 308 — ST-456-UV",
-    vehicleId: "v4",
-    user: "Admin",
-  },
-  {
-    id: "a2",
-    timestamp: "2026-07-14T14:15:00",
-    kind: "maintenance_scheduled",
-    label: "Maintenance planifiée",
-    details: "Révision complète — Garage Central — 14/07/2026",
-    vehicleId: "v2",
-    user: "Admin",
-  },
-  {
-    id: "a3",
-    timestamp: "2026-07-14T11:00:00",
-    kind: "incident_created",
-    label: "Incident déclaré",
-    details: "Accrochage latéral — Avenue Habib Bourguiba",
-    vehicleId: "v1",
-    user: "Admin",
-  },
-  {
-    id: "a4",
-    timestamp: "2026-07-13T16:45:00",
-    kind: "fuel_added",
-    label: "Plein enregistré",
-    details: "45.5 L — Total Energies — 97.83 €",
-    vehicleId: "v1",
-    user: "Admin",
-  },
-  {
-    id: "a5",
-    timestamp: "2026-07-13T10:20:00",
-    kind: "driver_created",
-    label: "Conducteur ajouté",
-    details: "Ahmed Ben Ali — TN-123456",
-    user: "Admin",
-  },
-  {
-    id: "a6",
-    timestamp: "2026-07-12T09:00:00",
-    kind: "document_created",
-    label: "Document ajouté",
-    details: "Assurance — ASS-2024-005",
-    vehicleId: "v2",
-    user: "Admin",
-  },
-  {
-    id: "a7",
-    timestamp: "2026-07-10T14:30:00",
-    kind: "inspection_created",
-    label: "État des lieux (entrée)",
-    details: "45 230 km — carburant 85%",
-    vehicleId: "v1",
-    user: "Admin",
-  },
-  {
-    id: "a8",
-    timestamp: "2026-07-10T08:15:00",
-    kind: "vehicle_updated",
-    label: "Fiche véhicule modifiée",
-    details: "Champs : mileage, status",
-    vehicleId: "v3",
-    user: "Admin",
-  },
-  {
-    id: "a9",
-    timestamp: "2026-07-08T11:30:00",
-    kind: "maintenance_scheduled",
-    label: "Maintenance récurrente planifiée (mensuelle)",
-    details: "Vidange — Speedy — 08/07/2026",
-    vehicleId: "v3",
-    user: "Admin",
-  },
-  {
-    id: "a10",
-    timestamp: "2026-07-05T09:45:00",
-    kind: "vehicle_deleted",
-    label: "Véhicule supprimé",
-    details: "Renault Clio IV — AB-999-XY",
-    user: "Admin",
-  },
-];
 
 function ActivityPage() {
   const [query, setQuery] = useState("");
@@ -154,21 +54,31 @@ function ActivityPage() {
   const [currentPage, setCurrentPage] = useState(1);
 
   const vehicles = useFleetStore((s) => s.vehicles);
-  const storeHistory = useFleetStore((s) => s.history);
+  const storeActivities = useFleetStore((s) => s.activities);
+  const activitiesLoading = useFleetStore((s) => s.activitiesLoading);
+  const activitiesError = useFleetStore((s) => s.activitiesError);
+  const fetchActivities = useFleetStore((s) => s.fetchActivities);
 
-  // Merge store history + mock activities
-  const allActivities: ActivityItem[] = [
-    ...storeHistory.map((h) => ({
-      id: h.id,
-      timestamp: h.timestamp,
-      kind: h.kind as ActivityKind,
-      label: h.label,
-      details: h.details,
-      vehicleId: h.vehicleId,
-      user: "Admin",
-    })),
-    ...mockActivities,
-  ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  // Toujours rafraîchir le journal à chaque visite de la page pour avoir
+  // les dernières actions (y compris celles faites depuis d'autres onglets).
+  useEffect(() => {
+    fetchActivities();
+  }, []);
+
+  // Le backend est la source de vérité unique : on n'utilise plus les entrées
+  // optimistes locales (storeHistory) qui avaient des IDs temporaires ne
+  // correspondant jamais aux IDs réels en BDD → suppression des doublons.
+  const allActivities: ActivityRow[] = storeActivities
+    .map((a) => ({
+      id: a.id,
+      timestamp: a.timestamp,
+      kind: a.kind,
+      label: a.label,
+      details: a.details,
+      vehicleId: a.vehicleId,
+      user: a.User?.name ?? "Système",
+    }))
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
   // ─── Filtrage ───
   const filtered = allActivities.filter((a) => {
@@ -181,7 +91,7 @@ function ActivityPage() {
       matchDate &&
       (a.label.toLowerCase().includes(q) ||
         a.details?.toLowerCase().includes(q) ||
-        a.user?.toLowerCase().includes(q))
+        a.user.toLowerCase().includes(q))
     );
   });
 
@@ -231,6 +141,12 @@ function ActivityPage() {
           <SummaryCard label="Total" value={allActivities.length} tint="bg-muted text-foreground" icon={CheckCircle2} />
         </div>
 
+        {activitiesError && (
+          <div className="rounded-xl border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+            Impossible de charger l'historique complet ({activitiesError}). Les actions récentes restent visibles.
+          </div>
+        )}
+
         {/* ─── Filtres ─── */}
         <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
           <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
@@ -265,6 +181,8 @@ function ActivityPage() {
                 <option value="driver_created">Conducteur</option>
                 <option value="incident_created">Incident</option>
                 <option value="fuel_added">Carburant</option>
+                <option value="reservation_created">Réservation créée</option>
+                <option value="reservation_updated">Réservation modifiée</option>
               </select>
 
               <input
@@ -349,7 +267,7 @@ function ActivityPage() {
               {paginated.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
-                    Aucune activité trouvée.
+                    {activitiesLoading ? "Chargement de l'historique..." : "Aucune activité trouvée."}
                   </TableCell>
                 </TableRow>
               )}
@@ -407,7 +325,7 @@ function ActivityPage() {
           })}
           {paginated.length === 0 && (
             <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
-              Aucune activité trouvée.
+              {activitiesLoading ? "Chargement de l'historique..." : "Aucune activité trouvée."}
             </div>
           )}
         </div>

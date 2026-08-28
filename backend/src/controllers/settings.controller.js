@@ -1,11 +1,24 @@
 const { Settings } = require("../models");
 const ApiResponse = require("../utils/ApiResponse");
 
-// GET /api/settings  (singleton — crée la ligne par défaut si absente)
+const UPDATABLE_FIELDS = [
+  "companyName",
+  "companyLogoUrl",
+  "companyAddress",
+  "companyPhone",
+  "companyEmail",
+  "companyTaxId",
+  "notifyEmail",
+  "notifyOnDocumentExpiry",
+  "notifyOnMaintenanceDue",
+  "notifyOnIncident",
+  "documentAlertDaysBefore",
+];
+
+// GET /api/settings
 async function get(req, res, next) {
   try {
-    let settings = await Settings.findOne();
-    if (!settings) settings = await Settings.create({});
+    const [settings] = await Settings.findOrCreate({ where: { id: 1 } });
     return ApiResponse.ok(res, settings);
   } catch (err) {
     next(err);
@@ -15,9 +28,12 @@ async function get(req, res, next) {
 // PATCH /api/settings
 async function update(req, res, next) {
   try {
-    let settings = await Settings.findOne();
-    if (!settings) settings = await Settings.create({});
-    await settings.update(req.body);
+    const [settings] = await Settings.findOrCreate({ where: { id: 1 } });
+    const patch = {};
+    for (const key of UPDATABLE_FIELDS) {
+      if (req.body[key] !== undefined) patch[key] = req.body[key];
+    }
+    await settings.update(patch);
     return ApiResponse.ok(res, settings, "Paramètres mis à jour");
   } catch (err) {
     next(err);

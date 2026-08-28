@@ -13,6 +13,7 @@ import { Route as VehiclesRouteImport } from './routes/vehicles'
 import { Route as StatsRouteImport } from './routes/stats'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ReservationsRouteImport } from './routes/reservations'
+import { Route as PaymentsRouteImport } from './routes/payments'
 import { Route as MaintenanceRouteImport } from './routes/maintenance'
 import { Route as InspectionsRouteImport } from './routes/inspections'
 import { Route as IncidentsRouteImport } from './routes/incidents'
@@ -22,7 +23,6 @@ import { Route as DocumentsRouteImport } from './routes/documents'
 import { Route as CalendarRouteImport } from './routes/calendar'
 import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as ActivityRouteImport } from './routes/activity'
-import { Route as PaymentsRouteImport } from './routes/payments'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as VehiclesIndexRouteImport } from './routes/vehicles.index'
 import { Route as VehiclesIdRouteImport } from './routes/vehicles.$id'
@@ -46,6 +46,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const ReservationsRoute = ReservationsRouteImport.update({
   id: '/reservations',
   path: '/reservations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PaymentsRoute = PaymentsRouteImport.update({
+  id: '/payments',
+  path: '/payments',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MaintenanceRoute = MaintenanceRouteImport.update({
@@ -91,11 +96,6 @@ const AlertsRoute = AlertsRouteImport.update({
 const ActivityRoute = ActivityRouteImport.update({
   id: '/activity',
   path: '/activity',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PaymentsRoute = PaymentsRouteImport.update({
-  id: '/payments',
-  path: '/payments',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -289,6 +289,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ReservationsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/payments': {
+      id: '/payments'
+      path: '/payments'
+      fullPath: '/payments'
+      preLoaderRoute: typeof PaymentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/maintenance': {
       id: '/maintenance'
       path: '/maintenance'
@@ -350,13 +357,6 @@ declare module '@tanstack/react-router' {
       path: '/activity'
       fullPath: '/activity'
       preLoaderRoute: typeof ActivityRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/payments': {
-      id: '/payments'
-      path: '/payments'
-      fullPath: '/payments'
-      preLoaderRoute: typeof PaymentsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {

@@ -142,4 +142,24 @@ export const vehicleService = {
   async remove(id: string): Promise<void> {
     await apiClient.delete<ApiEnvelope<null>>(`/vehicles/${id}`);
   },
+
+  async getHistory(id: string): Promise<import("./mock-data").HistoryEntry[]> {
+    type ApiHistory = {
+      id: number;
+      vehicleId: number | null;
+      timestamp: string;
+      kind: import("./mock-data").HistoryEntry["kind"];
+      label: string;
+      details?: string | null;
+    };
+    const res = await apiClient.get<ApiEnvelope<ApiHistory[]>>(`/vehicles/${id}/history`);
+    return res.data.map((h) => ({
+      id: String(h.id),
+      vehicleId: h.vehicleId != null ? String(h.vehicleId) : id,
+      timestamp: h.timestamp,
+      kind: h.kind,
+      label: h.label,
+      details: h.details ?? undefined,
+    }));
+  },
 };

@@ -54,24 +54,10 @@ export interface Alert {
   date: string;
 }
 
-export interface Inspection {
-  id: string;
-  vehicleId: string;
-  type: "entree" | "sortie";
-  date: string;
-  mileage: number;
-  fuelLevel: number;
-  notes: string;
-  checklist: {
-    tires: boolean;
-    exteriorClean: boolean;
-    interiorClean: boolean;
-    spareWheel: boolean;
-    triangle: boolean;
-    vest: boolean;
-  };
-  photos: string[];
-}
+// NOTE : le type "Inspection" et le mock "inspections" ont été retirés d'ici.
+// Les états des lieux sont désormais branchés sur une vraie API — voir
+// src/lib/inspectionService.ts (InspectionDTO / InspectionInput) et
+// useFleetStore (fetchInspections / addInspection / editInspection / removeInspection).
 
 export interface Maintenance {
   id: string;
@@ -119,12 +105,6 @@ export const alerts: Alert[] = [
   { id: "a4", vehicleId: "v7", message: "Révision 60 000 km à planifier", severity: "medium", date: "2026-07-09" },
   { id: "a5", vehicleId: "v12", message: "Plaquettes de frein à remplacer", severity: "high", date: "2026-07-08" },
   { id: "a6", vehicleId: "v1", message: "Carte grise à mettre à jour", severity: "low", date: "2026-07-05" },
-];
-
-export const inspections: Inspection[] = [
-  { id: "i1", vehicleId: "v2", type: "sortie", date: "2026-07-08", mileage: 27950, fuelLevel: 90, notes: "Rayure légère aile avant droite.", checklist: { tires: true, exteriorClean: true, interiorClean: true, spareWheel: true, triangle: true, vest: true }, photos: [img("1552519507-da3b142c6e3d"), img("1494976388531-d1058494cdd8")] },
-  { id: "i2", vehicleId: "v2", type: "entree", date: "2026-06-25", mileage: 27100, fuelLevel: 45, notes: "RAS.", checklist: { tires: true, exteriorClean: false, interiorClean: true, spareWheel: true, triangle: true, vest: true }, photos: [img("1580273916550-e323be2ae537")] },
-  { id: "i3", vehicleId: "v4", type: "sortie", date: "2026-07-05", mileage: 8850, fuelLevel: 100, notes: "Véhicule impeccable.", checklist: { tires: true, exteriorClean: true, interiorClean: true, spareWheel: true, triangle: true, vest: true }, photos: [img("1621007947382-bb3c3994e3fb")] },
 ];
 
 export const maintenances: Maintenance[] = [

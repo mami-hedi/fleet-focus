@@ -165,13 +165,13 @@ function PaymentsPage() {
           </div>
         </div>
 
-        {paymentStats && (
+        {paymentStats?.byMethod && (
           <div className="p-4 rounded-xl border bg-card">
             <h3 className="text-sm font-medium mb-4 text-muted-foreground">Revenus par méthode</h3>
             <div className="space-y-3">
               {(['cash', 'card', 'transfer', 'cheque'] as PaymentMethod[]).map(method => {
-                const amount = paymentStats.revenueByMethod[method] || 0;
-                const total = Math.max(1, Object.values(paymentStats.revenueByMethod).reduce((a,b) => a+b, 0));
+                const amount = paymentStats.byMethod[method] || 0;
+                const total = Math.max(1, Object.values(paymentStats.byMethod).reduce((a,b) => a+b, 0));
                 const pct = (amount / total) * 100;
                 return (
                   <div key={method} className="flex items-center gap-3 text-sm">
@@ -280,7 +280,7 @@ function PaymentsPage() {
                           {conf.label}
                         </span>
                       </TableCell>
-                      <TableCell>{p.paymentDate ? new Date(p.paymentDate).toLocaleDateString() : '—'}</TableCell>
+                      <TableCell>{p.paidAt ? new Date(p.paidAt).toLocaleDateString() : '—'}</TableCell>
                       <TableCell className="text-muted-foreground">{p.reference || '—'}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
@@ -334,7 +334,7 @@ function PaymentsPage() {
                   </div>
                   <div className="flex justify-between items-center text-xs text-muted-foreground pt-3 border-t">
                     <div className="flex items-center gap-1">
-                      <Calendar className="w-3 h-3" /> {p.paymentDate ? new Date(p.paymentDate).toLocaleDateString() : '—'}
+                      <Calendar className="w-3 h-3" /> {p.paidAt ? new Date(p.paidAt).toLocaleDateString() : '—'}
                     </div>
                     <div className="flex gap-1">
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditing(p); setDialogOpen(true); }}>
@@ -409,7 +409,7 @@ function PaymentDialog({ payment, reservations, onClose, onSave }: { payment: Pa
     amount: payment?.amount || 0,
     method: payment?.method || 'cash',
     status: payment?.status || 'paid',
-    paymentDate: payment?.paymentDate ? new Date(payment.paymentDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+    paidAt: payment?.paidAt ? new Date(payment.paidAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
     reference: payment?.reference || '',
     notes: payment?.notes || ''
   });
@@ -492,8 +492,8 @@ function PaymentDialog({ payment, reservations, onClose, onSave }: { payment: Pa
               <label className="text-sm font-medium">Date de paiement {formData.status === 'paid' && '*'}</label>
               <Input
                 type="date"
-                value={formData.paymentDate}
-                onChange={e => setFormData({ ...formData, paymentDate: e.target.value })}
+                value={formData.paidAt ?? ''}
+                onChange={e => setFormData({ ...formData, paidAt: e.target.value })}
                 required={formData.status === 'paid'}
               />
             </div>

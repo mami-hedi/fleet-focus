@@ -5,7 +5,7 @@ const validate = require("../middlewares/validate.middleware");
 const { authenticate } = require("../middlewares/auth.middleware");
 
 const router = Router();
-router.use(authenticate);
+//router.use(authenticate);
 
 const rules = [
   body("vehicleId").isInt(),

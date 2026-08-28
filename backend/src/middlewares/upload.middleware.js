@@ -8,11 +8,10 @@ const fileFilter = (req, file, cb) => {
   cb(new Error("Format de fichier non supporté (JPG, PNG, WEBP uniquement)"));
 };
 
-// Fabrique un middleware multer dédié à un sous-dossier de uploads/ (ex: "documents", "drivers", "vehicles").
+// Fabrique un middleware multer dédié à un sous-dossier de uploads/ (ex: "documents", "drivers", "vehicles", "inspections").
 function makeUploader(subfolder) {
   const uploadDir = path.join(__dirname, "..", "uploads", subfolder);
   fs.mkdirSync(uploadDir, { recursive: true });
-
   const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, uploadDir),
     filename: (req, file, cb) => {
@@ -21,7 +20,6 @@ function makeUploader(subfolder) {
       cb(null, safeName);
     },
   });
-
   return multer({
     storage,
     fileFilter,
@@ -34,4 +32,5 @@ module.exports = {
   documentUpload: makeUploader("documents"),
   driverUpload: makeUploader("drivers"),
   vehicleUpload: makeUploader("vehicles"),
+  inspectionUpload: makeUploader("inspections"),
 };

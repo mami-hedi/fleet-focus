@@ -1,6 +1,6 @@
 import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
-import { ArrowLeft, Calendar, Wrench, FileText, CheckCircle2, XCircle, AlertTriangle, Pencil, Trash2, Plus, History, Repeat, ClipboardCheck, CarFront } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ArrowLeft, Calendar, Wrench, FileText, CheckCircle2, XCircle, AlertTriangle, Pencil, Trash2, Plus, History, Repeat, ClipboardCheck, CarFront, Loader2 } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
 import { VehicleImage } from "@/components/VehicleImage";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { fuelLabels, docTypeLabels, daysUntil, recurrenceLabels } from "@/lib/mock-data";
 import { useFleetStore } from "@/lib/store";
+import { resolveFileUrl } from "@/lib/files";
 import { VehicleFormDialog } from "@/components/VehicleFormDialog";
 import { MaintenanceDialog } from "@/components/MaintenanceDialog";
 import { toast } from "sonner";
@@ -38,14 +39,39 @@ function VehicleDetail() {
   const { id } = Route.useLoaderData();
   const vehicle = useFleetStore((s) => s.vehicles.find((v) => v.id === id));
   const inspections = useFleetStore((s) => s.inspections);
+  const inspectionsLoading = useFleetStore((s) => s.inspectionsLoading);
+  const fetchInspections = useFleetStore((s) => s.fetchInspections);
   const maintenances = useFleetStore((s) => s.maintenances);
+  const maintenancesLoaded = useFleetStore((s) => s.maintenancesLoaded);
+  const maintenancesLoading = useFleetStore((s) => s.maintenancesLoading);
+  const fetchMaintenances = useFleetStore((s) => s.fetchMaintenances);
   const documents = useFleetStore((s) => s.documents);
+  const documentsLoaded = useFleetStore((s) => s.documentsLoaded);
+  const documentsLoading = useFleetStore((s) => s.documentsLoading);
+  const fetchDocuments = useFleetStore((s) => s.fetchDocuments);
   const history = useFleetStore((s) => s.history);
+  const historyLoading = useFleetStore((s) => s.historyLoading);
+  const fetchVehicleHistory = useFleetStore((s) => s.fetchVehicleHistory);
   const deleteVehicle = useFleetStore((s) => s.deleteVehicle);
   const navigate = useNavigate();
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [maintOpen, setMaintOpen] = useState(false);
+
+  // Placé avant le "if (!vehicle) throw notFound()" pour respecter les règles des Hooks
+  // (un hook ne peut pas être appelé après un return/throw conditionnel).
+  // Les états des lieux sont filtrés côté API (vehicleId) et refetchés à chaque
+  // arrivée sur la page. Maintenances et documents sont des listes globales
+  // (filtrées ensuite côté client) : on ne les refetch que si elles n'ont pas
+  // déjà été chargées ailleurs dans l'app, pour éviter un onglet vide quand on
+  // atterrit directement sur cette fiche véhicule sans passer par /maintenance
+  // ou /documents avant.
+  useEffect(() => {
+    fetchInspections({ vehicleId: id });
+    fetchVehicleHistory(id);
+    if (!maintenancesLoaded) fetchMaintenances();
+    if (!documentsLoaded) fetchDocuments();
+  }, [fetchInspections, fetchMaintenances, fetchDocuments, fetchVehicleHistory, id, maintenancesLoaded, documentsLoaded]);
 
   if (!vehicle) throw notFound();
 
@@ -145,114 +171,137 @@ function VehicleDetail() {
 
           <TabsContent value="inspections" className="mt-4">
             <div className="flex items-center justify-between pb-3">
-              <p className="text-sm text-muted-foreground">{vInspections.length} état{vInspections.length > 1 ? "s" : ""} des lieux</p>
+              <p className="text-sm text-muted-foreground">
+                {inspectionsLoading ? "Chargement..." : `${vInspections.length} état${vInspections.length > 1 ? "s" : ""} des lieux`}
+              </p>
               <Link to="/inspections/new" search={{ vehicleId: vehicle.id }}>
                 <Button size="sm" className="gap-1.5"><Plus className="h-3.5 w-3.5" /> Nouvel état des lieux</Button>
               </Link>
             </div>
-            <ol className="relative space-y-4 border-l-2 border-border pl-6">
-              {vInspections.length === 0 && <p className="text-sm text-muted-foreground">Aucun état des lieux enregistré.</p>}
-              {vInspections.map((ins) => (
-                <li key={ins.id} className="relative">
-                  <span className={cn(
-                    "absolute -left-[31px] flex h-5 w-5 items-center justify-center rounded-full ring-4 ring-background",
-                    ins.type === "sortie" ? "bg-info" : "bg-primary",
-                  )}>
-                    <span className="h-1.5 w-1.5 rounded-full bg-white" />
-                  </span>
-                  <div className="rounded-xl border border-border bg-card p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-semibold capitalize">{ins.type} · {new Date(ins.date).toLocaleDateString("fr-FR", { dateStyle: "long" })}</p>
-                        <p className="text-xs text-muted-foreground">{ins.mileage.toLocaleString("fr-FR")} km · Carburant {ins.fuelLevel}%</p>
+            {inspectionsLoading && vInspections.length === 0 ? (
+              <TabLoading />
+            ) : (
+              <ol className="relative space-y-4 border-l-2 border-border pl-6">
+                {vInspections.length === 0 && <p className="text-sm text-muted-foreground">Aucun état des lieux enregistré.</p>}
+                {vInspections.map((ins) => (
+                  <li key={ins.id} className="relative">
+                    <span className={cn(
+                      "absolute -left-[31px] flex h-5 w-5 items-center justify-center rounded-full ring-4 ring-background",
+                      ins.type === "sortie" ? "bg-info" : "bg-primary",
+                    )}>
+                      <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                    </span>
+                    <div className="rounded-xl border border-border bg-card p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-semibold capitalize">{ins.type} · {new Date(ins.date).toLocaleDateString("fr-FR", { dateStyle: "long" })}</p>
+                          <p className="text-xs text-muted-foreground">{ins.mileage.toLocaleString("fr-FR")} km · Carburant {ins.fuelLevel}%</p>
+                        </div>
                       </div>
-                    </div>
-                    {ins.photos.length > 0 && (
-                      <div className="mt-3 flex gap-2 overflow-x-auto">
-                        {ins.photos.map((p, i) => (
-                          <img key={i} src={p} alt="" className="h-16 w-24 shrink-0 rounded-md object-cover" />
+                      {ins.photos.length > 0 && (
+                        <div className="mt-3 flex gap-2 overflow-x-auto">
+                          {ins.photos.map((p, i) => {
+                            const url = resolveFileUrl(p);
+                            return url ? (
+                              <img key={i} src={url} alt="" className="h-16 w-24 shrink-0 rounded-md object-cover" />
+                            ) : null;
+                          })}
+                        </div>
+                      )}
+                      <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3">
+                        {Object.entries(ins.checklist).map(([k, v]) => (
+                          <div key={k} className="flex items-center gap-1.5">
+                            {v ? <CheckCircle2 className="h-3.5 w-3.5 text-success" /> : <XCircle className="h-3.5 w-3.5 text-destructive" />}
+                            <span className={v ? "text-foreground" : "text-muted-foreground line-through"}>{checklistLabel(k)}</span>
+                          </div>
                         ))}
                       </div>
-                    )}
-                    <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3">
-                      {Object.entries(ins.checklist).map(([k, v]) => (
-                        <div key={k} className="flex items-center gap-1.5">
-                          {v ? <CheckCircle2 className="h-3.5 w-3.5 text-success" /> : <XCircle className="h-3.5 w-3.5 text-destructive" />}
-                          <span className={v ? "text-foreground" : "text-muted-foreground line-through"}>{checklistLabel(k)}</span>
-                        </div>
-                      ))}
+                      {ins.notes && <p className="mt-3 rounded-md bg-muted p-2 text-xs text-muted-foreground">{ins.notes}</p>}
                     </div>
-                    {ins.notes && <p className="mt-3 rounded-md bg-muted p-2 text-xs text-muted-foreground">{ins.notes}</p>}
-                  </div>
-                </li>
-              ))}
-            </ol>
+                  </li>
+                ))}
+              </ol>
+            )}
           </TabsContent>
 
           <TabsContent value="maintenance" className="mt-4">
             <div className="flex items-center justify-between pb-3">
-              <p className="text-sm text-muted-foreground">{vMaintenances.length} intervention{vMaintenances.length > 1 ? "s" : ""}</p>
+              <p className="text-sm text-muted-foreground">
+                {maintenancesLoading && !maintenancesLoaded ? "Chargement..." : `${vMaintenances.length} intervention${vMaintenances.length > 1 ? "s" : ""}`}
+              </p>
               <Button size="sm" className="gap-1.5" onClick={() => setMaintOpen(true)}>
                 <Plus className="h-3.5 w-3.5" /> Planifier une maintenance
               </Button>
             </div>
-            <div className="rounded-xl border border-border bg-card">
-              <ul className="divide-y divide-border">
-                {vMaintenances.length === 0 && <li className="p-4 text-sm text-muted-foreground">Aucune maintenance.</li>}
-                {vMaintenances.map((m) => (
-                  <li key={m.id} className="flex items-center gap-4 p-4">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted"><Wrench className="h-4 w-4 text-muted-foreground" /></span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium">{m.type}</p>
-                        {m.recurrence && m.recurrence !== "none" && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                            <Repeat className="h-3 w-3" /> {recurrenceLabels[m.recurrence]}
-                          </span>
-                        )}
+            {maintenancesLoading && !maintenancesLoaded ? (
+              <TabLoading />
+            ) : (
+              <div className="rounded-xl border border-border bg-card">
+                <ul className="divide-y divide-border">
+                  {vMaintenances.length === 0 && <li className="p-4 text-sm text-muted-foreground">Aucune maintenance.</li>}
+                  {vMaintenances.map((m) => (
+                    <li key={m.id} className="flex items-center gap-4 p-4">
+                      <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted"><Wrench className="h-4 w-4 text-muted-foreground" /></span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium">{m.type}</p>
+                          {m.recurrence && m.recurrence !== "none" && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                              <Repeat className="h-3 w-3" /> {recurrenceLabels[m.recurrence]}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          <Calendar className="mr-1 inline h-3 w-3" />
+                          {new Date(m.completedDate ?? m.scheduledDate).toLocaleDateString("fr-FR")} · {m.garage}
+                        </p>
                       </div>
-                      <p className="text-xs text-muted-foreground">
-                        <Calendar className="mr-1 inline h-3 w-3" />
-                        {new Date(m.scheduledDate).toLocaleDateString("fr-FR")} · {m.garage}
-                      </p>
-                    </div>
-                    {m.cost && <span className="text-sm font-medium">{m.cost} €</span>}
-                    <MaintStatus status={m.status} />
-                  </li>
-                ))}
-              </ul>
-            </div>
+                      {m.cost && <span className="text-sm font-medium">{m.cost} €</span>}
+                      <MaintStatus status={m.status} />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="documents" className="mt-4">
-            <div className="rounded-xl border border-border bg-card">
-              <ul className="divide-y divide-border">
-                {vDocs.length === 0 && <li className="p-4 text-sm text-muted-foreground">Aucun document.</li>}
-                {vDocs.map((d) => {
-                  const days = daysUntil(d.expiryDate);
-                  const urgency = days < 0 ? "expired" : days < 30 ? "soon" : "ok";
-                  return (
-                    <li key={d.id} className="flex items-center gap-4 p-4">
-                      <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted"><FileText className="h-4 w-4 text-muted-foreground" /></span>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium">{docTypeLabels[d.type]}</p>
-                        <p className="font-mono text-xs text-muted-foreground">{d.number}</p>
-                      </div>
-                      <UrgencyBadge urgency={urgency} days={days} date={d.expiryDate} />
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
+            {documentsLoading && !documentsLoaded ? (
+              <TabLoading />
+            ) : (
+              <div className="rounded-xl border border-border bg-card">
+                <ul className="divide-y divide-border">
+                  {vDocs.length === 0 && <li className="p-4 text-sm text-muted-foreground">Aucun document.</li>}
+                  {vDocs.map((d) => {
+                    const days = daysUntil(d.expiryDate);
+                    const urgency = days < 0 ? "expired" : days < 30 ? "soon" : "ok";
+                    return (
+                      <li key={d.id} className="flex items-center gap-4 p-4">
+                        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted"><FileText className="h-4 w-4 text-muted-foreground" /></span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium">{docTypeLabels[d.type]}</p>
+                          <p className="font-mono text-xs text-muted-foreground">{d.number}</p>
+                        </div>
+                        <UrgencyBadge urgency={urgency} days={days} date={d.expiryDate} />
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="history" className="mt-4">
             <div className="flex items-center justify-between pb-3">
               <p className="text-sm text-muted-foreground">
-                {vHistory.length} événement{vHistory.length > 1 ? "s" : ""} enregistré{vHistory.length > 1 ? "s" : ""}
+                {historyLoading && vHistory.length === 0
+                  ? "Chargement..."
+                  : `${vHistory.length} événement${vHistory.length > 1 ? "s" : ""} enregistré${vHistory.length > 1 ? "s" : ""}`}
               </p>
             </div>
-            {vHistory.length === 0 ? (
+            {historyLoading && vHistory.length === 0 ? (
+              <TabLoading />
+            ) : vHistory.length === 0 ? (
               <div className="rounded-xl border border-dashed border-border bg-card p-8 text-center">
                 <History className="mx-auto h-6 w-6 text-muted-foreground" />
                 <p className="mt-2 text-sm text-muted-foreground">
@@ -326,6 +375,15 @@ function Info({ label, value, mono }: { label: string; value: string; mono?: boo
     <div className="flex justify-between border-b border-border py-2 last:border-0">
       <span className="text-sm text-muted-foreground">{label}</span>
       <span className={cn("text-sm font-medium", mono && "font-mono text-xs")}>{value}</span>
+    </div>
+  );
+}
+
+function TabLoading() {
+  return (
+    <div className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card py-10 text-sm text-muted-foreground">
+      <Loader2 className="h-4 w-4 animate-spin" />
+      Chargement...
     </div>
   );
 }

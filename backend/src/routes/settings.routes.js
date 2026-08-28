@@ -1,11 +1,12 @@
 const { Router } = require("express");
 const controller = require("../controllers/settings.controller");
-const { authenticate, authorize } = require("../middlewares/auth.middleware");
+// NOTE: l'authentification est actuellement désactivée côté backend en dev
+// (voir api-client.ts), comme pour /api/vehicles. À réactiver avec
+// `router.use(authenticate)` une fois le login branché.
 
 const router = Router();
-router.use(authenticate);
 
 router.get("/", controller.get);
-router.patch("/", authorize("admin", "manager"), controller.update);
+router.patch("/", controller.update);
 
 module.exports = router;
