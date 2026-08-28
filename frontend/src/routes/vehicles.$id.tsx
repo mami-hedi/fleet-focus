@@ -35,6 +35,42 @@ export const Route = createFileRoute("/vehicles/$id")({
   ),
 });
 
+// Normalise le champ "photos" d'une inspection : la colonne MySQL sous-jacente
+// est en longtext (pas un vrai type JSON), donc selon le point d'entrée des
+// données (cache store, réponse API avant redémarrage backend, etc.) la valeur
+// peut arriver comme un array déjà parsé, une string JSON, ou null/undefined.
+// Cette fonction garantit un array exploitable dans tous les cas, sans jamais
+// faire planter le rendu.
+function normalizePhotos(photos: unknown): string[] {
+  if (Array.isArray(photos)) return photos;
+  if (typeof photos === "string") {
+    try {
+      const parsed = JSON.parse(photos);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+// Même logique de sécurité pour "checklist", qui partage la même colonne
+// longtext en base et peut donc être sujette au même problème.
+function normalizeChecklist(checklist: unknown): Record<string, boolean> {
+  if (checklist && typeof checklist === "object" && !Array.isArray(checklist)) {
+    return checklist as Record<string, boolean>;
+  }
+  if (typeof checklist === "string") {
+    try {
+      const parsed = JSON.parse(checklist);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
 function VehicleDetail() {
   const { id } = Route.useLoaderData();
   const vehicle = useFleetStore((s) => s.vehicles.find((v) => v.id === id));
@@ -183,43 +219,47 @@ function VehicleDetail() {
             ) : (
               <ol className="relative space-y-4 border-l-2 border-border pl-6">
                 {vInspections.length === 0 && <p className="text-sm text-muted-foreground">Aucun état des lieux enregistré.</p>}
-                {vInspections.map((ins) => (
-                  <li key={ins.id} className="relative">
-                    <span className={cn(
-                      "absolute -left-[31px] flex h-5 w-5 items-center justify-center rounded-full ring-4 ring-background",
-                      ins.type === "sortie" ? "bg-info" : "bg-primary",
-                    )}>
-                      <span className="h-1.5 w-1.5 rounded-full bg-white" />
-                    </span>
-                    <div className="rounded-xl border border-border bg-card p-4">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                          <p className="text-sm font-semibold capitalize">{ins.type} · {new Date(ins.date).toLocaleDateString("fr-FR", { dateStyle: "long" })}</p>
-                          <p className="text-xs text-muted-foreground">{ins.mileage.toLocaleString("fr-FR")} km · Carburant {ins.fuelLevel}%</p>
-                        </div>
-                      </div>
-                      {ins.photos.length > 0 && (
-                        <div className="mt-3 flex gap-2 overflow-x-auto">
-                          {ins.photos.map((p, i) => {
-                            const url = resolveFileUrl(p);
-                            return url ? (
-                              <img key={i} src={url} alt="" className="h-16 w-24 shrink-0 rounded-md object-cover" />
-                            ) : null;
-                          })}
-                        </div>
-                      )}
-                      <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3">
-                        {Object.entries(ins.checklist).map(([k, v]) => (
-                          <div key={k} className="flex items-center gap-1.5">
-                            {v ? <CheckCircle2 className="h-3.5 w-3.5 text-success" /> : <XCircle className="h-3.5 w-3.5 text-destructive" />}
-                            <span className={v ? "text-foreground" : "text-muted-foreground line-through"}>{checklistLabel(k)}</span>
+                {vInspections.map((ins) => {
+                  const photos = normalizePhotos(ins.photos);
+                  const checklist = normalizeChecklist(ins.checklist);
+                  return (
+                    <li key={ins.id} className="relative">
+                      <span className={cn(
+                        "absolute -left-[31px] flex h-5 w-5 items-center justify-center rounded-full ring-4 ring-background",
+                        ins.type === "sortie" ? "bg-info" : "bg-primary",
+                      )}>
+                        <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                      </span>
+                      <div className="rounded-xl border border-border bg-card p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-semibold capitalize">{ins.type} · {new Date(ins.date).toLocaleDateString("fr-FR", { dateStyle: "long" })}</p>
+                            <p className="text-xs text-muted-foreground">{ins.mileage.toLocaleString("fr-FR")} km · Carburant {ins.fuelLevel}%</p>
                           </div>
-                        ))}
+                        </div>
+                        {photos.length > 0 && (
+                          <div className="mt-3 flex gap-2 overflow-x-auto">
+                            {photos.map((p, i) => {
+                              const url = resolveFileUrl(p);
+                              return url ? (
+                                <img key={i} src={url} alt="" className="h-16 w-24 shrink-0 rounded-md object-cover" />
+                              ) : null;
+                            })}
+                          </div>
+                        )}
+                        <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3">
+                          {Object.entries(checklist).map(([k, v]) => (
+                            <div key={k} className="flex items-center gap-1.5">
+                              {v ? <CheckCircle2 className="h-3.5 w-3.5 text-success" /> : <XCircle className="h-3.5 w-3.5 text-destructive" />}
+                              <span className={v ? "text-foreground" : "text-muted-foreground line-through"}>{checklistLabel(k)}</span>
+                            </div>
+                          ))}
+                        </div>
+                        {ins.notes && <p className="mt-3 rounded-md bg-muted p-2 text-xs text-muted-foreground">{ins.notes}</p>}
                       </div>
-                      {ins.notes && <p className="mt-3 rounded-md bg-muted p-2 text-xs text-muted-foreground">{ins.notes}</p>}
-                    </div>
-                  </li>
-                ))}
+                    </li>
+                  );
+                })}
               </ol>
             )}
           </TabsContent>
