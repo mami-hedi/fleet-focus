@@ -6,12 +6,15 @@ import {
   useRouter,
   HeadContent,
   Scripts,
+  useNavigate,
+  useRouterState,
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { Toaster } from "@/components/ui/sonner";
+import { useAuthStore } from "@/lib/authStore";
 
 function NotFoundComponent() {
   return (
@@ -116,6 +119,36 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const { initialize, isAuthenticated, isInitializing } = useAuthStore();
+  const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+
+  // Initialise la session au premier rendu (lecture localStorage + validation /api/auth/me)
+  useEffect(() => {
+    void initialize();
+  }, [initialize]);
+
+  // Guard : redirige vers /login si non authentifié (sauf si déjà sur /login)
+  useEffect(() => {
+    if (!isInitializing && !isAuthenticated && pathname !== "/login") {
+      void navigate({ to: "/login" });
+    }
+  }, [isInitializing, isAuthenticated, pathname, navigate]);
+
+  // Pendant l'initialisation, afficher un loader minimal pour éviter le flash
+  if (isInitializing) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <div className="flex min-h-screen items-center justify-center bg-background">
+          <div className="flex flex-col items-center gap-3 text-muted-foreground">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            <span className="text-sm">Chargement…</span>
+          </div>
+        </div>
+        <Toaster />
+      </QueryClientProvider>
+    );
+  }
 
   return (
     <QueryClientProvider client={queryClient}>

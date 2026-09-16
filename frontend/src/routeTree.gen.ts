@@ -15,6 +15,7 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ReservationsRouteImport } from './routes/reservations'
 import { Route as PaymentsRouteImport } from './routes/payments'
 import { Route as MaintenanceRouteImport } from './routes/maintenance'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as InspectionsRouteImport } from './routes/inspections'
 import { Route as IncidentsRouteImport } from './routes/incidents'
 import { Route as FuelRouteImport } from './routes/fuel'
@@ -56,6 +57,11 @@ const PaymentsRoute = PaymentsRouteImport.update({
 const MaintenanceRoute = MaintenanceRouteImport.update({
   id: '/maintenance',
   path: '/maintenance',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InspectionsRoute = InspectionsRouteImport.update({
@@ -129,6 +135,7 @@ export interface FileRoutesByFullPath {
   '/fuel': typeof FuelRoute
   '/incidents': typeof IncidentsRoute
   '/inspections': typeof InspectionsRouteWithChildren
+  '/login': typeof LoginRoute
   '/maintenance': typeof MaintenanceRoute
   '/payments': typeof PaymentsRoute
   '/reservations': typeof ReservationsRoute
@@ -149,6 +156,7 @@ export interface FileRoutesByTo {
   '/fuel': typeof FuelRoute
   '/incidents': typeof IncidentsRoute
   '/inspections': typeof InspectionsRouteWithChildren
+  '/login': typeof LoginRoute
   '/maintenance': typeof MaintenanceRoute
   '/payments': typeof PaymentsRoute
   '/reservations': typeof ReservationsRoute
@@ -169,6 +177,7 @@ export interface FileRoutesById {
   '/fuel': typeof FuelRoute
   '/incidents': typeof IncidentsRoute
   '/inspections': typeof InspectionsRouteWithChildren
+  '/login': typeof LoginRoute
   '/maintenance': typeof MaintenanceRoute
   '/payments': typeof PaymentsRoute
   '/reservations': typeof ReservationsRoute
@@ -191,6 +200,7 @@ export interface FileRouteTypes {
     | '/fuel'
     | '/incidents'
     | '/inspections'
+    | '/login'
     | '/maintenance'
     | '/payments'
     | '/reservations'
@@ -211,6 +221,7 @@ export interface FileRouteTypes {
     | '/fuel'
     | '/incidents'
     | '/inspections'
+    | '/login'
     | '/maintenance'
     | '/payments'
     | '/reservations'
@@ -230,6 +241,7 @@ export interface FileRouteTypes {
     | '/fuel'
     | '/incidents'
     | '/inspections'
+    | '/login'
     | '/maintenance'
     | '/payments'
     | '/reservations'
@@ -251,6 +263,7 @@ export interface RootRouteChildren {
   FuelRoute: typeof FuelRoute
   IncidentsRoute: typeof IncidentsRoute
   InspectionsRoute: typeof InspectionsRouteWithChildren
+  LoginRoute: typeof LoginRoute
   MaintenanceRoute: typeof MaintenanceRoute
   PaymentsRoute: typeof PaymentsRoute
   ReservationsRoute: typeof ReservationsRoute
@@ -301,6 +314,13 @@ declare module '@tanstack/react-router' {
       path: '/maintenance'
       fullPath: '/maintenance'
       preLoaderRoute: typeof MaintenanceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/inspections': {
@@ -426,6 +446,7 @@ const rootRouteChildren: RootRouteChildren = {
   FuelRoute: FuelRoute,
   IncidentsRoute: IncidentsRoute,
   InspectionsRoute: InspectionsRouteWithChildren,
+  LoginRoute: LoginRoute,
   MaintenanceRoute: MaintenanceRoute,
   PaymentsRoute: PaymentsRoute,
   ReservationsRoute: ReservationsRoute,

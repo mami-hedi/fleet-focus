@@ -1,8 +1,8 @@
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import {
   LayoutDashboard, Car, ClipboardCheck, Wrench, FileText, Plus,
   CalendarDays, Fuel, AlertTriangle, Settings,
-  Users, BookOpen, ShieldAlert, CreditCard
+  Users, BookOpen, ShieldAlert, CreditCard, LogOut
 } from "lucide-react";
 import {
   Sidebar,
@@ -17,6 +17,7 @@ import {
   SidebarSeparator,
   SidebarFooter,
 } from "@/components/ui/sidebar";
+import { useAuthStore } from "@/lib/authStore";
 
 // ─── Navigation principale ───
 const mainNav = [
@@ -59,9 +60,16 @@ const adminNav = [
 
 export function AppSidebar() {
   const pathname = useRouterState({ select: (r) => r.location.pathname });
+  const navigate = useNavigate();
+  const { user, logout } = useAuthStore();
 
   const isActive = (url: string, exact?: boolean) =>
     exact ? pathname === url : pathname === url || pathname.startsWith(url + "/") || pathname === url;
+
+  const handleLogout = () => {
+    logout();
+    void navigate({ to: "/login" });
+  };
 
   return (
     <Sidebar collapsible="icon">
@@ -208,12 +216,30 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      {/* ─── Footer ─── */}
-      <SidebarFooter className="border-t border-sidebar-border p-4 group-data-[collapsible=icon]:hidden">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <div className="h-2 w-2 rounded-full bg-success" />
-          <span>Parc opérationnel</span>
+      {/* ─── Footer : utilisateur connecté + déconnexion ─── */}
+      <SidebarFooter className="border-t border-sidebar-border p-3">
+        {/* Infos utilisateur — masquées en mode icône réduit */}
+        <div className="mb-2 flex items-center gap-2 group-data-[collapsible=icon]:hidden">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+            {user?.name?.charAt(0)?.toUpperCase() ?? "A"}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-medium text-sidebar-foreground">
+              {user?.name ?? "Admin"}
+            </p>
+            <p className="truncate text-[10px] text-muted-foreground">{user?.email ?? ""}</p>
+          </div>
         </div>
+
+        {/* Bouton déconnexion */}
+        <button
+          onClick={handleLogout}
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-destructive"
+          title="Se déconnecter"
+        >
+          <LogOut className="h-4 w-4 shrink-0" />
+          <span className="group-data-[collapsible=icon]:hidden">Se déconnecter</span>
+        </button>
       </SidebarFooter>
     </Sidebar>
   );
